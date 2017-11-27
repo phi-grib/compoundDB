@@ -7,5 +7,5 @@ setup(name='compoundDB',
       author='Elisabet Gregori',
       author_email='elisabet.gregori@upf.edu',
       license='Apache License, Version 2.0',
-      packages=['compoundDB'],
+      packages=['.'],
       zip_safe=False)
