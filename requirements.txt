@@ -1,1 +1,3 @@
 pip install git+https://github.com/bet-gregori/phitools.git
+pip install git+https://github.com/bet-gregori/standardiser.git
+pip install psycopg2
