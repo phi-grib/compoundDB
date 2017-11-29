@@ -1,6 +1,5 @@
 import sys, datetime
 from phitools import moleculeHelper as mh
-from stn
 from process_smiles import *
 
 import psycopg2
