@@ -22,16 +22,16 @@ def addSource(conn, name, version= None, description= None, link= None, \
     if version is None:
         cmd = "SELECT id FROM source WHERE name = %s ORDER BY version DESC;"
         curs.execute(cmd, (sourcename,))
-        oldVersion = curs.fetchone()[0]
+        oldVersion = curs.fetchone()
         conn.commit()
         if oldVersion is None:
             version = 1
         else:
-            version += int(oldVersion)
+            version += int(oldVersion[0])
             
     cmd = "SELECT id FROM source WHERE name = %s AND version = %s;"
     curs.execute(cmd, (name, version))
-    sourceID = curs.fetchone()[0]
+    sourceID = curs.fetchone()
     conn.commit()
     
     if sourceID is None:
@@ -43,6 +43,8 @@ def addSource(conn, name, version= None, description= None, link= None, \
         curs.execute(cmd)
         sourceID = curs.fetchone()[0]
         conn.commit()
+    else:
+        sourceID = sourceID[0]
     
     return sourceID
 
@@ -50,7 +52,7 @@ def addEmptyCompound(conn, subsID, smiles):
     curs = conn.cursor()
     cmd = "SELECT id FROM compound WHERE smiles = %s;"
     curs.execute(cmd, (smiles,))
-    cmpdID = curs.fetchone()[0]
+    cmpdID = curs.fetchone()
     conn.commit()
         
     if cmpdID is None:  
@@ -63,6 +65,8 @@ def addEmptyCompound(conn, subsID, smiles):
         curs.execute(cmd)
         cmpdID = curs.fetchone()[0]
         conn.commit()
+    else:
+        cmpdID = cmpdID[0]
             
     cmd = "INSERT INTO subs_cmpd (subsid, cmpdid)\
        VALUES (%s, %s)"
@@ -91,7 +95,7 @@ def addCompound(conn, sourceID, subsID, smiles= None, mol= None, ismetal=False):
 
         cmd = "SELECT id FROM compound WHERE inchikey = %s;"
         curs.execute(cmd, (inchikey,))
-        cmpdID = curs.fetchone()[0]
+        cmpdID = curs.fetchone()
         conn.commit()
 
         if cmpdID is None:
@@ -112,6 +116,8 @@ def addCompound(conn, sourceID, subsID, smiles= None, mol= None, ismetal=False):
             curs.execute(cmd)
             cmpdID = curs.fetchone()[0]
             conn.commit()
+        else:
+            cmpdID = cmpdID[0]
             
     cmd = "INSERT INTO subs_cmpd (subsid, cmpdid)\
        VALUES (%s, %s)"
@@ -125,7 +131,7 @@ def addEmptySubstance(conn, sourceID, extID, molID= None, link= None):
     cmd = "SELECT id FROM substance WHERE sourceid = %s \
             AND externalid = %s;"
     curs.execute(cmd, (sourceID, extID))
-    subsID = curs.fetchone()[0]
+    subsID = curs.fetchone()
     conn.commit()
 
     if not subsID:
@@ -138,6 +144,8 @@ def addEmptySubstance(conn, sourceID, extID, molID= None, link= None):
         curs.execute(cmd)
         subsID = curs.fetchone()[0]
         conn.commit()
+    else:
+        subsID = subsID[0]
     
     return (subsID, None)
 
@@ -158,7 +166,7 @@ def addSubstance(conn, sourceID, extID, smiles= None, mol= None, link= None):
         cmd = "SELECT id FROM substance WHERE sourceid = %s \
                 AND externalid = %s;"
         curs.execute(cmd, (sourceID, extID))
-        subsID = curs.fetchone()[0]
+        subsID = curs.fetchone()
         conn.commit()
 
         if not subsID:
@@ -180,6 +188,8 @@ def addSubstance(conn, sourceID, extID, smiles= None, mol= None, link= None):
             for smiles in stdD:
                 (cmpd, ismetal) = stdD[smiles]
                 (cmpdID, cmpdmol) = addCompound(conn, sourceID, subsID, smiles= smiles, mol= cmpd, ismetal=ismetal)
+        else:
+            subsID = subsID[0]
             
     return (subsID, mol)
 
