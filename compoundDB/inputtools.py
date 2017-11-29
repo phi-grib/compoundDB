@@ -271,7 +271,7 @@ def addSubstanceFromQuery(conn, sourceID, cmd, host='gea', dbname='chembl_23', u
     qconn = psycopg2.connect(host=host, dbname=dbname, user=user, password=password)
     qcurs = qconn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     qcurs.execute(cmd)
-    row = qcurs.fetchone()[0]
+    row = qcurs.fetchone()
     while row:
         extID = row[extIDf]
         smi = row[smilesF]
@@ -284,6 +284,6 @@ def addSubstanceFromQuery(conn, sourceID, cmd, host='gea', dbname='chembl_23', u
             continue
         addSubstance(conn, sourceID, extID= extID, smiles= smi, \
                      mol= mol, link= link)
-        row = qcurs.fetchone()[0]
+        row = qcurs.fetchone()
     qcurs.commit()
 
