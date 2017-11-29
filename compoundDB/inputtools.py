@@ -1,6 +1,6 @@
 import sys, datetime
 from phitools import moleculeHelper as mh
-from process_smiles import *
+from standardiser import process_smiles as ps
 
 import psycopg2
 from psycopg2 import extras
@@ -176,7 +176,7 @@ def addSubstance(conn, sourceID, extID, smiles= None, mol= None, link= None):
             subsID = curs.fetchone()[0]
             conn.commit()
         
-            stdD = std(mol)
+            stdD = ps.std(mol)
             for smiles in stdD:
                 (cmpd, ismetal) = stdD[smiles]
                 (cmpdID, cmpdmol) = addCompound(conn, sourceID, subsID, smiles= smiles, mol= cmpd, ismetal=ismetal)
