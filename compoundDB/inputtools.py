@@ -15,6 +15,13 @@ def openconnection(host='gea', dbname='compounds', user='postgres', password='DB
 
     return conn
 
+def addSynonyms(conn, subsID, synD):
+    curs = conn.cursor()
+    cmd = "INSERT INTO synonym (subsid, type, name) \
+            VALUES (%s, %s, %s)"
+    curs.executemany(cmd, [(subsID,syntype,syn) for syntype in synD for syn in synD[syntype]])
+    conn.commit()
+
 def addSource(conn, name, version= None, description= None, link= None, \
               date= datetime.datetime.now().date()):
     curs = conn.cursor()
