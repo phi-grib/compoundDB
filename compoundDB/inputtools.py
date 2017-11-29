@@ -254,7 +254,7 @@ def addSubstanceFile(conn, sourceID, fname, ftype, molID= None, smilesI= 1, link
             molcount += 1
             if mol is None:
                 extID = mh.getNameFromEmpty(suppl, molcount-1, molID)
-                (subsID, mol) = addEmptySubstance(conn, dbID, extID, link)
+                (subsID, mol) = addEmptySubstance(conn, sourceID, extID, link)
                 
             else:                
                 extID = mh.getName(mol, molcount, molID)                    
