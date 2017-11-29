@@ -4,7 +4,7 @@ from standardiser import process_smiles as ps
 
 import psycopg2
 from psycopg2 import extras
-from rdkit.Chem import *
+from rdkit import Chem
 from rdkit.Chem.Descriptors import MolWt
 from rdkit.Chem.Crippen import MolLogP
 
@@ -88,7 +88,7 @@ def addCompound(conn, sourceID, subsID, smiles= None, mol= None, ismetal=False):
         (cmpdID, mol) = addEmptyCompound(conn, subsID, smiles)
     elif mol is None:
         try:
-            mol = MolFromSmiles(smiles)
+            mol = Chem.MolFromSmiles(smiles)
         except:
             print (smiles)
             (cmpdID, mol) = addEmptyCompound(conn, subsID, smiles)
@@ -97,8 +97,8 @@ def addCompound(conn, sourceID, subsID, smiles= None, mol= None, ismetal=False):
         # Molecule object has been created, but only as an empty instnce
         (cmpdID, mol) = addEmptyCompound(conn, subsID, smiles)            
     else:
-        inchi = MolToInchi(mol)
-        inchikey = InchiToInchiKey(inchi)
+        inchi = Chem.MolToInchi(mol)
+        inchikey = Chem.InchiToInchiKey(inchi)
 
         cmd = "SELECT id FROM compound WHERE inchikey = %s;"
         curs.execute(cmd, (inchikey,))
@@ -107,7 +107,7 @@ def addCompound(conn, sourceID, subsID, smiles= None, mol= None, ismetal=False):
 
         if cmpdID is None:
             if smiles is None:
-                smiles = MolToSmiles(mol)
+                smiles = Chem.MolToSmiles(mol)
             mw = MolWt(mol)
             logp = MolLogP(mol)
 
@@ -162,7 +162,7 @@ def addSubstance(conn, sourceID, extID, smiles= None, mol= None, link= None):
         (subsID, mol) = addEmptySubstance(curs, conn, sourceID, extID, link)
     elif mol is None:
         try:
-            mol = MolFromSmiles(smiles)
+            mol = Chem.MolFromSmiles(smiles)
         except:
             (subsID, mol) = addEmptySubstance(curs, conn, sourceID, extID, link)
             
@@ -216,6 +216,10 @@ def addSubstanceFile(conn, sourceID, fname, ftype, molID= None, smilesI= 1, link
                         synTypes = list(synonyms)
                         for t in synTypes:
                             synIndices.append(header.index(t))
+                if not isinstance(molID, int):
+                    molID = header.index(molID)
+                if not isinstance(smilesI, int):
+                    smilesI = header.index(smilesI)
             molcount = 0
             for line in f:
                 molcount += 1
@@ -230,7 +234,7 @@ def addSubstanceFile(conn, sourceID, fname, ftype, molID= None, smilesI= 1, link
 
                 # Add the subsance
                 try:
-                    mol = MolFromSmiles(smi)
+                    mol = Chem.MolFromSmiles(smi)
                 except:
                     (subsID, mol) = addEmptySubstance(conn, dbID, extID, link)
                 else:
@@ -295,7 +299,7 @@ def addSubstanceFromQuery(conn, sourceID, cmd, host='gea', dbname='chembl_23', u
         if linkF is None: link = None
         else: link= row[linkF]
         try:
-            mol = MolFromSmiles(smi)
+            mol = Chem.MolFromSmiles(smi)
         except:
             addEmptySubstance(conn, dbID, extID, link)
             continue
