@@ -1,5 +1,6 @@
 import sys, datetime
-from moleculeHelper import *
+from phitools import moleculeHelper as mh
+from stn
 from process_smiles import *
 
 import psycopg2
@@ -236,15 +237,15 @@ def addSubstanceFile(conn, sourceID, fname, ftype, molID= None, smilesI= 1, link
         for mol in suppl:
             molcount += 1
             if mol is None:
-                extID = getNameFromEmpty(suppl, molcount-1, molID)                    
+                extID = mh.getNameFromEmpty(suppl, molcount-1, molID)
                 (subsID, mol) = addEmptySubstance(conn, dbID, extID, link)
                 
             else:                
-                extID = getName(mol, molcount, molID)                    
+                extID = mh.getName(mol, molcount, molID)                    
                 link = None
                 if linkI is not None:
                     try:
-                        link = GetProp(mol, linkI)
+                        link = mol.GetProp(linkI)
                     except:
                         pass
                 (subsID, mol) = addSubstance(conn, sourceID, extID= extID, mol= mol, link= link)
