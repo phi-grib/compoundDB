@@ -248,10 +248,10 @@ def addSubstance(conn, sourceID, extID, smiles= None, mol= None, link= None):
         conn.commit()
 
         if not subsID:
-            inchi = MolToInchi(mol)
-            inchikey = InchiToInchiKey(inchi)
+            inchi = Chem.MolToInchi(mol)
+            inchikey = Chem.InchiToInchiKey(inchi)
             if smiles is None:
-                smiles = MolToSmiles(mol)
+                smiles = Chem.MolToSmiles(mol)
 
             cmd = "INSERT INTO substance (sourceid, externalid, smiles, mol, inchi, inchikey)\
             VALUES (%s, %s, %s, mol_from_smiles(%s), %s, %s)"
