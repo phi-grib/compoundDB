@@ -310,7 +310,10 @@ def addSubstanceFile(conn, sourceID, fname, ftype, extID= None, smilesI= 1, link
             for line in f:
                 molcount += 1
                 fields = line.rstrip().split('\t')
-                smi = fields[smilesI]
+                try:
+                    smi = fields[smilesI]
+                except:
+                    smi = None
                 if extID is None:
                     extID = 'mol%0.8d'%molcount
                 else:
