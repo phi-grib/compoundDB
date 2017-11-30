@@ -324,7 +324,7 @@ def addSubstanceFile(conn, sourceID, fname, ftype, extID= None, smilesI= 1, link
                 except:
                     (subsID, mol) = addEmptySubstance(conn, dbID, extID, link)
                 else:
-                    (subsID, mol) = addSubstance(conn, sourceID, extID= extID, smiles= smiles, \
+                    (subsID, mol) = addSubstance(conn, sourceID, extID= extID, smiles= smi, \
                                                  mol= mol, link= link)
                     
                 # Add synonyms
