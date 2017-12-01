@@ -32,9 +32,13 @@ def addSynonyms(conn, subsID, synD):
           - synD: Dictionary with the substance synonyms' and their types {type: synonym}.
     """
     curs = conn.cursor()
-    cmd = "INSERT INTO synonym (subsid, type, name) \
-            VALUES (%s, %s, %s)"
-    curs.executemany(cmd, [(subsID,syntype,syn) for syntype in synD for syn in synD[syntype]])
+    cmd = "INSERT INTO public.synonym (subsid, type, name)\
+           SELECT %s, %s, %s'\
+           WHERE NOT EXISTS (SELECT subsid, type, name\
+               FROM public.synonym \
+               WHERE subsid= %s AND type= %s \
+               AND name= %s)"
+    curs.executemany(cmd, [(subsID,syntype,syn,subsID,syntype,syn) for syntype in synD for syn in synD[syntype]])
     conn.commit()
 
 def addSource(conn, name, version= None, description= None, link= None, \
@@ -310,7 +314,7 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname, extIDindex= None, extIDfie
             elif synonymsIndices:
                 synTypes = []
                 for i in synonymsIndices:
-                    synTypes.append(header[i])
+                    synTypes.append(header[i].strip())
 
         else:
             # If the file has no header and some columns contain synonyms, 
@@ -324,6 +328,7 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname, extIDindex= None, extIDfie
         molcount = 0
         for line in f:
             molcount += 1
+            subsID = None
             fields = line.rstrip().split('\t')
             try:
                 smi = fields[smilesIndex]
@@ -361,7 +366,7 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname, extIDindex= None, extIDfie
                     sindex = synonymsIndices[i]
                     stype = synTypes[i]
                     if len(fields) <= sindex: continue
-                    syn = fields[sindex]
+                    syn = fields[sindex].strip()
                     if syn == 'N/A' or syn == '': continue
                     if stype not in synD:
                         synD[stype] = set([syn])
