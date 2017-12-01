@@ -53,7 +53,7 @@ def addSource(conn, name, version= None, description= None, link= None, \
     """
     curs = conn.cursor()
     # Check if version is provided, otherwise generate it
-    if version is None:
+    if not version:
         cmd = "SELECT id FROM source WHERE name = %s ORDER BY version DESC;"
         curs.execute(cmd, (sourcename,))
         oldVersion = curs.fetchone()
@@ -271,107 +271,139 @@ def addSubstance(conn, sourceID, extID, smiles= None, mol= None, link= None):
             
     return (subsID, mol)
 
-def addSubstanceFile(conn, sourceID, fname, ftype, extID= None, smilesI= 1, linkI= None, header= False, synonyms= None):
+def addSubstanceFromSmilesFile(conn, sourceID, fname, extIDindex= None, extIDfield= None, smilesIndex= 1, smilesField= 'smiles', linkIndex= None, linkField= None, synonymsIndices= None, synonymsFields= None, header= False):
     """
-        Process a file with substances from a given source. The file can either be in SD format or a text file with smiles strings.
+        Process a text file with smiles strings of substances from a given source.
         Arguments:
           - conn: psycopg2 connection to the database.
           - sourceID: id for the source of origin from the 'source' table.
           - fname: Input file name.
-          - ftype: Input file type (sdf / smi).
-          - extID: Field containing the id of the substance in the source of origin (default: None). 
-            - If the input format is 'sdf', it can be a field name or None. If None, the substance name from the first line will be used and if this is empty an id will be generated with a substance counter. 
-            - If the input format is 'smi', it can either be an integer corresponding to the column index or the name of the header of the column containing the substance id. If None, an id will be generated with a substance counter.
-          - smilesI: Optional. Field containing substance's smiles string. It can either be an integer corresponding to the column index or the name of the header of the column containing the smiles string (default: 1).
-          - linkI: Optional. Field containing a link to the substance information page (default: None). 
-            - If the input format is 'sdf', it can be a field name or None.  
-            - If the input format is 'smi', it can either be an integer corresponding to the column index or the name of the header of the column containing the link. 
+          - extIDindex: Optional. Index of the column containing the id of the substance in the source of origin (default: None). If None, an id will be generated with a substance counter.
+          - extIDfield: Optional. Name of the header of the column containing the substance id (default: None). If None, an id will be generated with a substance counter.
+          - smilesIndex: Optional. Index of the column containing the substance's smiles string (default: 1). 
+          - smilesField: Optional. Name of the header of the column containing the substance's smiles string (default: 'smiles').
+          - linkIndex: Optional. Index of the column containing a link to the substance information page (default: None). 
+          - linkField: Optional. Name of the header of the column containing a link to the substance information page (default: None).
+          - synonymsIndices: Optional. List of indices of the column(s) containing synonyms of the substance (default: None). Synonym type will be 'Name'.
+          - synonymsFields: Optional. List of name(s) of the header of the column(s) containing synonyms of the substance (default: None). 
+          - header: Boolean indicating if the file has a header (default: False).
     """
-    curs = conn.cursor()
-    if ftype == 'smi':                
-        with open(fname) as f:
-            if header: 
-                header = f.readline().rstrip().split('\t')
-                if synonyms is not None:
-                    if all(isinstance(n, int) for n in synonyms):
-                        synIndices = list(synonyms)
-                        synTypes = []
-                        for i in synIndices:
-                            synTypes.append(header[i])
-                    else:
-                        synTypes = list(synonyms)
-                        for t in synTypes:
-                            synIndices.append(header.index(t))
-                if not isinstance(extID, int):
-                    extID = header.index(extID)
-                if not isinstance(smilesI, int):
-                    smilesI = header.index(smilesI)
-            molcount = 0
-            for line in f:
-                molcount += 1
-                fields = line.rstrip().split('\t')
-                try:
-                    smi = fields[smilesI]
-                except:
-                    smi = None
-                if extID is None:
-                    extID = 'mol%0.8d'%molcount
-                else:
-                    extID = fields[extID]
-                if linkI is None: link = None
-                else: link= fields[linkI]
+    curs = conn.cursor()          
+    with open(fname) as f:
+        if header: 
+            header = f.readline().rstrip().split('\t')
+            if extIDfield:
+                extIDindex = header.index(extIDfield)
 
-                # Add the subsance
-                try:
-                    mol = Chem.MolFromSmiles(smi)
-                except:
-                    (subsID, mol) = addEmptySubstance(conn, dbID, extID, link)
-                else:
-                    (subsID, mol) = addSubstance(conn, sourceID, extID= extID, smiles= smi, \
-                                                 mol= mol, link= link)
-                    
-                # Add synonyms
-                synD = {'ExternalID': set([extID])}
-                if synonyms is None:
-                    addSynonyms(conn, subsID, synD)
-                else:
-                    for i in range(synonyms):
-                        syn = fields[synIndices[i]]
-                        if syn != 'N/A': synD[synTypes[i]] = set([])
-                    addSynonyms(conn, subsID, synD)
-                    
-    elif ftype == 'sdf':
-        suppl = SDMolSupplier(fname)
+            if smilesField:
+                smilesIndex = header.index(smilesField)
+
+            if linkField:
+                linkIndex = header.index(linkField)
+
+            if synonymsFields:
+                synTypes = synonymsFields
+                synonymsIndices = []
+                for t in synTypes:
+                    synonymsIndices.append(header.index(t))
+
+            elif synonymsIndices:
+                synTypes = []
+                for i in synonymsIndices:
+                    synTypes.append(header[i])
+
+        else:
+            # If the file has no header and some columns contain synonyms, 
+            # set each synonym type to 'Name'
+            if synonymsIndices:
+                synonymsIndices = synonymsIndices
+                synTypes = []
+                for i in synonymsIndices:
+                    synTypes.append('Name')
+
         molcount = 0
-        for mol in suppl:
+        for line in f:
             molcount += 1
-            if mol is None:
-                extID = mh.getNameFromEmpty(suppl, molcount-1, extID)
-                (subsID, mol) = addEmptySubstance(conn, sourceID, extID, link)
+            fields = line.rstrip().split('\t')
+            try:
+                smi = fields[smilesI]
+            except:
+                smi = None
+            if not extIDindex:
+                # No field with the ID of the substance in the source of origin 
+                # has been provided so one will be generated.
+                extID = 'mol%0.8d'%molcount
+            else:
+                extID = fields[extIDindex]
+            if not linkIndex: link = None
+            else: link= fields[linkIndex]
+
+            # Add the subsance
+            try:
+                mol = Chem.MolFromSmiles(smi)
+            except:
+                (subsID, mol) = addEmptySubstance(conn, dbID, extID, link)
+            else:
+                (subsID, mol) = addSubstance(conn, sourceID, extID= extID, smiles= smi, \
+                                                mol= mol, link= link)
                 
-            else:                
-                extID = mh.getName(mol, molcount, extID)                    
-                link = None
-                if linkI is not None:
-                    try:
-                        link = mol.GetProp(linkI)
-                    except:
-                        pass
-                (subsID, mol) = addSubstance(conn, sourceID, extID= extID, mol= mol, link= link)
-            
             # Add synonyms
             synD = {'ExternalID': set([extID])}
-            if synonyms is not None:
-                for synType in synonyms:
-                    try:
-                        syn = mol.GetProp(synType)
-                        if syn != 'N/A':
-                            if synType not in synD:
-                                synD[synType] = set([syn])
-                            synD[synType].add(syn)
-                    except:
-                        pass
+            if synonymsIndices:
+                for i in range(synonymsIndices):
+                    sindex = synonymsIndices[i]
+                    stype = synTypes[i]
+                    if len(fields) <= sindex: continue
+                    syn = fields[sindex]
+                    if syn == 'N/A': continue
+                    if stype not in synD:
+                        synD[stype] = set([syn])
+                    else:
+                        synD.add(syn)
             addSynonyms(conn, subsID, synD)
+
+def addSubstanceSDFile(conn, sourceID, fname, extIDfield= None, linkField= None, synonymsFields= None):
+    """
+        Process an SD file of substances from a given source.
+        Arguments:
+          - conn: psycopg2 connection to the database.
+          - sourceID: id for the source of origin from the 'source' table.
+          - fname: Input file name.
+          - extIDfield: Optional. Name of the field containing the substance id (default: None). If None, an id will be generated with a substance counter.
+          - synonymsFields: Optional. List of name(s) of the field(s) containing synonyms of the substance (default: None). 
+    """
+    curs = conn.cursor()
+    suppl = SDMolSupplier(fname)
+    molcount = 0
+    for mol in suppl:
+        molcount += 1
+        if mol is None:
+            extID = mh.getNameFromEmpty(suppl, molcount-1, extID)
+            (subsID, mol) = addEmptySubstance(conn, sourceID, extID, link)
+            
+        else:                
+            extID = mh.getName(mol, molcount, extID)                    
+            link = None
+            if linkI:
+                try:
+                    link = mol.GetProp(linkI)
+                except:
+                    pass
+            (subsID, mol) = addSubstance(conn, sourceID, extID= extID, mol= mol, link= link)
+        
+        # Add synonyms
+        synD = {'ExternalID': set([extID])}
+        if synonyms:
+            for synType in synonyms:
+                try:
+                    syn = mol.GetProp(synType)
+                    if syn != 'N/A':
+                        if synType not in synD:
+                            synD[synType] = set([syn])
+                        synD[synType].add(syn)
+                except:
+                    pass
+        addSynonyms(conn, subsID, synD)
 
 def addSubstanceFromQuery(conn, sourceID, cmd, host='gea', dbname='chembl_23', user='postgres', \
                           password='', extIDf= 'ID', smilesF= 'smiles', \
@@ -402,7 +434,7 @@ def addSubstanceFromQuery(conn, sourceID, cmd, host='gea', dbname='chembl_23', u
     while row:
         extID = row[extIDf]
         smi = row[smilesF]
-        if linkF is None: link = None
+        if not linkF: link = None
         else: link= row[linkF]
         try:
             mol = Chem.MolFromSmiles(smi)
