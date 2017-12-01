@@ -326,15 +326,16 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname, extIDindex= None, extIDfie
             molcount += 1
             fields = line.rstrip().split('\t')
             try:
-                smi = fields[smilesI]
+                smi = fields[smilesIndex]
             except:
                 smi = None
-            if not extIDindex:
+            if extIDindex is None:
                 # No field with the ID of the substance in the source of origin 
                 # has been provided so one will be generated.
                 extID = 'mol%0.8d'%molcount
             else:
                 extID = fields[extIDindex]
+
             if not linkIndex: link = None
             else: link= fields[linkIndex]
 
@@ -350,7 +351,7 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname, extIDindex= None, extIDfie
             # Add synonyms
             synD = {'ExternalID': set([extID])}
             if synonymsIndices:
-                for i in range(synonymsIndices):
+                for i in range(len(synonymsIndices)):
                     sindex = synonymsIndices[i]
                     stype = synTypes[i]
                     if len(fields) <= sindex: continue
