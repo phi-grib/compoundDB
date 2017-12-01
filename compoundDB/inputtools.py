@@ -362,7 +362,7 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname, extIDindex= None, extIDfie
                     stype = synTypes[i]
                     if len(fields) <= sindex: continue
                     syn = fields[sindex]
-                    if syn == 'N/A' or syn == '': continue
+                    if syn == 'N/A': continue
                     if stype not in synD:
                         synD[stype] = set([syn])
                     else:
@@ -404,7 +404,7 @@ def addSubstanceSDFile(conn, sourceID, fname, extIDfield= None, linkField= None,
             for synType in synonyms:
                 try:
                     syn = mol.GetProp(synType)
-                    if syn != 'N/A' and syn != '':
+                    if syn != 'N/A':
                         if synType not in synD:
                             synD[synType] = set([syn])
                         synD[synType].add(syn)
