@@ -409,7 +409,7 @@ def addSubstanceSDFile(conn, sourceID, fname, extIDfield= None, linkField= None,
             for synType in synonyms:
                 try:
                     syn = mol.GetProp(synType)
-                    if syn != 'N/A' and syn != '':
+                    if syn != 'N/A':
                         if synType not in synD:
                             synD[synType] = set([syn])
                         synD[synType].add(syn)
