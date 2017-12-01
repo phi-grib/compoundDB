@@ -342,7 +342,7 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname, extIDindex= None, extIDfie
             try:
                 mol = Chem.MolFromSmiles(smi)
             except:
-                (subsID, mol) = addEmptySubstance(conn, dbID, extID, link)
+                (subsID, mol) = addEmptySubstance(conn, sourceID, extID, link)
             else:
                 (subsID, mol) = addSubstance(conn, sourceID, extID= extID, smiles= smi, \
                                                 mol= mol, link= link)
@@ -439,7 +439,7 @@ def addSubstanceFromQuery(conn, sourceID, cmd, host='gea', dbname='chembl_23', u
         try:
             mol = Chem.MolFromSmiles(smi)
         except:
-            addEmptySubstance(conn, dbID, extID, link)
+            addEmptySubstance(conn, sourceID, extID, link)
             continue
         addSubstance(conn, sourceID, extID= extID, smiles= smi, \
                      mol= mol, link= link)
