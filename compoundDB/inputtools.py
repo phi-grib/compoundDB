@@ -455,6 +455,7 @@ def addSubstanceFromQuery(conn, sourceID, cmd, host='gea', dbname='chembl_23', u
 
 def addSynonymsFromFile(conn, fname, sourceID, extIDindex= None, extIDfield= None, synonymsIndices= None, synonymsFields= None, header= False):
     """
+    Add synonyms for substances already in the DB.
     """
     curs = conn.cursor()          
     with open(fname) as f:
