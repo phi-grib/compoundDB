@@ -3,10 +3,11 @@ from phitools import moleculeHelper as mh
 from standardiser import process_smiles as ps
 
 import psycopg2
-from psycopg2 import extras
 from rdkit import Chem
 from rdkit.Chem.Descriptors import MolWt
 from rdkit.Chem.Crippen import MolLogP
+
+from compoundDB import querytools as qt
 
 def openconnection(host='gea', dbname='compounds', user='postgres', password=''):
     """
@@ -22,51 +23,6 @@ def openconnection(host='gea', dbname='compounds', user='postgres', password='')
     curs.execute('create extension if not exists rdkit;')
 
     return conn
-
-def getSubsID(conn, sourceID, extID):
-    """
-    Return the ID for a substance given the source and external ID.
-    Arguments:
-          - conn: psycopg2 connection to the database.
-          - sourceID: id for the source of origin from the 'source' table.
-          - extID: id for the subsance in the source of origin.
-    """
-    curs = conn.cursor()
-    cmd = "SELECT id FROM substance WHERE sourceid = %s AND externalid = %s;"
-    curs.execute(cmd, (sourceID, extID))
-    subsID = curs.fetchone()
-    conn.commit()
-
-    if subsID is not None:
-        subsID = subsID[0]
-
-    return subsID
-
-def getSourceID(conn, sourceName, version= None):
-    """
-    Return the ID for a source given the source name and optionally the version. 
-    If no version is provided, the last version will be used.
-    Arguments:
-          - conn: psycopg2 connection to the database.
-          - sourceName: Source name.
-          - version: Optional. Source's version (default: None). If None, 
-          the last version will be used.
-    """
-    curs = conn.cursor()
-    if version is None:
-        # Get the last version        
-        cmd = "SELECT id FROM source WHERE name = %s ORDER BY version DESC LIMIT 1;"
-        curs.execute(cmd, (sourceName,))
-    else:
-        # Get a specific version
-        cmd = "SELECT id FROM source WHERE name = %s AND version = %s;"
-        curs.execute(cmd, (sourceName, version))
-
-    sourceID = curs.fetchone()[0]
-    conn.commit()
-
-    return sourceID
-
 def addSynonyms(conn, subsID, synD):
     """
         Add all synonyms provided for a given substance.
@@ -483,10 +439,8 @@ def addSubstanceFromQuery(conn, sourceID, cmd, host='gea', dbname='chembl_23', u
     
     # Open connection to the query DB
     qconn = psycopg2.connect(host=host, dbname=dbname, user=user, password=password)
-    qcurs = qconn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    qcurs.execute(cmd)
-    row = qcurs.fetchone()
-    while row:
+    df = pd.read_sql(cmd, con=qconn)
+    for index, row in df.iterrows():
         extID = row[extIDf]
         smi = row[smilesF]
         if not linkF: link = None
@@ -498,8 +452,6 @@ def addSubstanceFromQuery(conn, sourceID, cmd, host='gea', dbname='chembl_23', u
             continue
         addSubstance(conn, sourceID, extID= extID, smiles= smi, \
                      mol= mol, link= link)
-        row = qcurs.fetchone()
-    qcurs.commit()
 
 def addSynonymsFromFile(conn, fname, sourceID, extIDindex= None, extIDfield= None, synonymsIndices= None, synonymsFields= None, header= False):
     """
@@ -549,8 +501,9 @@ def addSynonymsFromFile(conn, fname, sourceID, extIDindex= None, extIDfield= Non
                         extID = 'mol%0.8d'%molcount
 
             # Get substance ID
-            subsID = getSubsID(conn, sourceID, extID)
+            subsID = qt.getSubsID(conn, sourceID, extID)
             if not subsID:
+                # The substance is not in the DB
                 continue
                 
             # Add synonyms
