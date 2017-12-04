@@ -1,13 +1,12 @@
 import sys, datetime
 from phitools import moleculeHelper as mh
 from standardiser import process_smiles as ps
+from compoundDB import querytools as qt
 
 import psycopg2
 from rdkit import Chem
 from rdkit.Chem.Descriptors import MolWt
 from rdkit.Chem.Crippen import MolLogP
-
-from compoundDB import querytools as qt
 
 def openconnection(host='gea', dbname='compounds', user='postgres', password=''):
     """
@@ -23,6 +22,7 @@ def openconnection(host='gea', dbname='compounds', user='postgres', password='')
     curs.execute('create extension if not exists rdkit;')
 
     return conn
+
 def addSynonyms(conn, subsID, synD):
     """
         Add all synonyms provided for a given substance.
@@ -453,11 +453,25 @@ def addSubstanceFromQuery(conn, sourceID, cmd, host='gea', dbname='chembl_23', u
         addSubstance(conn, sourceID, extID= extID, smiles= smi, \
                      mol= mol, link= link)
 
-def addSynonymsFromFile(conn, fname, sourceID, extIDindex= None, extIDfield= None, synonymsIndices= None, synonymsFields= None, header= False):
+def addSynonymsFromFile(conn, fname, sourceID= None, sourceName= None, version= None,extIDindex= None, extIDfield= None, synonymsIndices= None, synonymsFields= None, header= False):
     """
     Add synonyms for substances already in the DB.
+    Arguments:
+        - conn: psycopg2 connection to the database.
+        - fname: Input file name.
+        - sourceID: Optional. Internal source ID if avaialble. Otherwise, it will be retrieved from he source name and version.
+        - sourceName: Source name.
+        - version: Optional. Source's version (default: None). If None, 
+        the last version will be used.
+        - extIDindex: Optional. Index of the column containing the id of the substance in the source of origin (default: None). If None, an id will be generated with a substance counter.
+        - extIDfield: Optional. Name of the header of the column containing the substance id (default: None). If None, an id will be generated with a substance counter.
+        - synonymsIndices: Optional. List of indices of the column(s) containing synonyms of the substance (default: None). Synonym type will be 'Name'.
+        - synonymsFields: Optional. List of name(s) of the header of the column(s) containing synonyms of the substance (default: None). 
+        - header: Boolean indicating if the file has a header (default: False).
     """
-    curs = conn.cursor()          
+    curs = conn.cursor()
+    if sourceID is None:
+        sourceID = getSourceID(conn, sourceName, version)
     with open(fname) as f:
         if header: 
             header = f.readline().rstrip().split('\t')
