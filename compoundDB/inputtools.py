@@ -76,7 +76,7 @@ def addSynonyms(conn, subsID, synD):
     """
     curs = conn.cursor()
     cmd = "INSERT INTO public.synonym (subsid, type, name)\
-           SELECT %s, %s, %s'\
+           SELECT %s, %s, %s\
            WHERE NOT EXISTS (SELECT subsid, type, name\
                FROM public.synonym \
                WHERE subsid= %s AND type= %s \
@@ -338,7 +338,7 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname, extIDindex= None, extIDfie
     curs = conn.cursor()          
     with open(fname) as f:
         if header: 
-            header = f.readline().rstrip().split('\t')
+            header = f.readline().rstrip().replace(u'\ufeff', '').split('\t')
             if extIDfield:
                 extIDindex = header.index(extIDfield)
 
