@@ -34,8 +34,11 @@ def getSubsID(conn, sourceID, extID):
     curs = conn.cursor()
     cmd = "SELECT id FROM substance WHERE sourceid = %s AND externalid = %s;"
     curs.execute(cmd, (sourceID, extID))
-    subsID = curs.fetchone()[0]
+    subsID = curs.fetchone()
     conn.commit()
+
+    if subsID is not None:
+        subsID = subsID[0]
 
     return subsID
 
@@ -547,6 +550,8 @@ def addSynonymsFromFile(conn, fname, sourceID, extIDindex= None, extIDfield= Non
 
             # Get substance ID
             subsID = getSubsID(conn, sourceID, extID)
+            if not subsID:
+                continue
                 
             # Add synonyms
             synD = {'ExternalID': set([extID])}
