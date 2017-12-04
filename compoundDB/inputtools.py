@@ -23,6 +23,49 @@ def openconnection(host='gea', dbname='compounds', user='postgres', password='')
 
     return conn
 
+def getSubsID(conn, sourceID, extID):
+    """
+    Return the ID for a substance given the source and external ID.
+    Arguments:
+          - conn: psycopg2 connection to the database.
+          - sourceID: id for the source of origin from the 'source' table.
+          - extID: id for the subsance in the source of origin.
+    """
+    curs = conn.cursor()
+    cmd = "SELECT id FROM substance WHERE sourceid = %s AND externalid = %s;"
+    curs.execute(cmd, (sourceID, extID))
+    subsID = curs.fetchone()[0]
+    conn.commit()
+
+    return subsID
+
+def getSourceID(conn, sourceName, version= None):
+    """
+    Return the ID for a source given the source name and optionally the version. 
+    If no version is provided, the last version will be used.
+    Arguments:
+          - conn: psycopg2 connection to the database.
+          - sourceName: Source name.
+          - version: Optional. Source's version (default: None). If None, 
+          the last version will be used.
+    """
+    if version is None:
+        # Get the last version
+        curs = conn.cursor()
+        cmd = "SELECT id FROM source WHERE name = %s ORDER BY version DESC LIMIT 1;"
+        curs.execute(cmd, (sourceID,))
+        sourceID = curs.fetchone()[0]
+        conn.commit()
+    else:
+        # Get a specific version
+        curs = conn.cursor()
+        cmd = "SELECT id FROM source WHERE name = %s AND version = %s;"
+        curs.execute(cmd, (sourceID, version))
+        sourceID = curs.fetchone()[0]
+        conn.commit()
+
+    return sourceID
+
 def addSynonyms(conn, subsID, synD):
     """
         Add all synonyms provided for a given substance.
@@ -41,13 +84,13 @@ def addSynonyms(conn, subsID, synD):
     curs.executemany(cmd, [(subsID,syntype,syn,subsID,syntype,syn) for syntype in synD for syn in synD[syntype]])
     conn.commit()
 
-def addSource(conn, name, version= None, description= None, link= None, \
+def addSource(conn, sourceName, version= None, description= None, link= None, \
               date= datetime.datetime.now().date()):
     """
         Insert a source to the DB.
         Arguments:
           - conn: psycopg2 connection to the database.
-          - name: Source name.
+          - sourceName: Source name.
           - version: Optional. Source's version (default: None). If None, if another source with the same name exists the version will be increased by one, else the version will be 1.
           - description: Optional. Verbose description of the source (default: None).
           - link: Optional. Link to the source's home page (default: None).
@@ -59,7 +102,7 @@ def addSource(conn, name, version= None, description= None, link= None, \
     # Check if version is provided, otherwise generate it
     if not version:
         cmd = "SELECT id FROM source WHERE name = %s ORDER BY version DESC;"
-        curs.execute(cmd, (sourcename,))
+        curs.execute(cmd, (sourceName,))
         oldVersion = curs.fetchone()
         conn.commit()
         if oldVersion is None:
@@ -68,14 +111,14 @@ def addSource(conn, name, version= None, description= None, link= None, \
             version += int(oldVersion[0])
             
     cmd = "SELECT id FROM source WHERE name = %s AND version = %s;"
-    curs.execute(cmd, (name, version))
+    curs.execute(cmd, (sourceName, version))
     sourceID = curs.fetchone()
     conn.commit()
     
     if sourceID is None:
         cmd = "INSERT INTO source (name, version, description, link, added)\
                VALUES (%s, %s, %s, %s, %s)"
-        curs.execute(cmd, (name, version, description, link, date))
+        curs.execute(cmd, (sourceName, version, description, link, date))
         conn.commit()
         cmd = "SELECT currval('source_id_seq');"
         curs.execute(cmd)
@@ -328,7 +371,6 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname, extIDindex= None, extIDfie
         molcount = 0
         for line in f:
             molcount += 1
-            subsID = None
             fields = line.rstrip().split('\t')
             try:
                 smi = fields[smilesIndex]
@@ -458,3 +500,71 @@ def addSubstanceFromQuery(conn, sourceID, cmd, host='gea', dbname='chembl_23', u
         row = qcurs.fetchone()
     qcurs.commit()
 
+def addSynonymsFromFile(conn, fname, sourceID, extIDindex= None, extIDfield= None, synonymsIndices= None, synonymsFields= None, header= False):
+    """
+    """
+    curs = conn.cursor()          
+    with open(fname) as f:
+        if header: 
+            header = f.readline().rstrip().split('\t')
+            if extIDfield:
+                extIDindex = header.index(extIDfield)
+
+            if synonymsFields:
+                synTypes = synonymsFields
+                synonymsIndices = []
+                for t in synTypes:
+                    synonymsIndices.append(header.index(t))
+
+            elif synonymsIndices:
+                synTypes = []
+                for i in synonymsIndices:
+                    synTypes.append(header[i].strip())
+
+        else:
+            # If the file has no header and some columns contain synonyms, 
+            # set each synonym type to 'Name'
+            if synonymsIndices:
+                synonymsIndices = synonymsIndices
+                synTypes = []
+                for i in synonymsIndices:
+                    synTypes.append('Name')
+
+        if synonymsIndices is None:
+            # No synonyms columns have been indicated
+            break
+
+        molcount = 0
+        for line in f:
+            molcount += 1
+            fields = line.rstrip().split('\t')
+            if extIDindex is None:
+                # No field with the ID of the substance in the source of origin 
+                # has been provided so one will be generated.
+                extID = 'mol%0.8d'%molcount
+            else:
+                try:
+                    extID = fields[extIDindex]
+                except:
+                    if smi is None:
+                        continue
+                    else:
+                        extID = 'mol%0.8d'%molcount
+
+            # Get substance ID
+            subsID = getSubsID(conn, sourceID, extID)
+                
+            # Add synonyms
+            synD = {'ExternalID': set([extID])}
+            if synonymsIndices:
+                for i in range(len(synonymsIndices)):
+                    sindex = synonymsIndices[i]
+                    stype = synTypes[i]
+                    if len(fields) <= sindex: continue
+                    syn = fields[sindex].strip()
+                    if syn == 'N/A' or syn == '': continue
+                    if stype not in synD:
+                        synD[stype] = set([syn])
+                    else:
+                        synD.add(syn)
+            addSynonyms(conn, subsID, synD)
