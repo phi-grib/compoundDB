@@ -49,20 +49,18 @@ def getSourceID(conn, sourceName, version= None):
           - version: Optional. Source's version (default: None). If None, 
           the last version will be used.
     """
+    curs = conn.cursor()
     if version is None:
-        # Get the last version
-        curs = conn.cursor()
+        # Get the last version        
         cmd = "SELECT id FROM source WHERE name = %s ORDER BY version DESC LIMIT 1;"
         curs.execute(cmd, (sourceID,))
-        sourceID = curs.fetchone()[0]
-        conn.commit()
     else:
         # Get a specific version
-        curs = conn.cursor()
         cmd = "SELECT id FROM source WHERE name = %s AND version = %s;"
         curs.execute(cmd, (sourceID, version))
-        sourceID = curs.fetchone()[0]
-        conn.commit()
+
+    sourceID = curs.fetchone()[0]
+    conn.commit()
 
     return sourceID
 
@@ -338,7 +336,7 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname, extIDindex= None, extIDfie
     curs = conn.cursor()          
     with open(fname) as f:
         if header: 
-            header = f.readline().rstrip().replace(u'\ufeff', '').split('\t')
+            header = f.readline().rstrip().split('\t')
             if extIDfield:
                 extIDindex = header.index(extIDfield)
 
