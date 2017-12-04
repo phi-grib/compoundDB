@@ -53,11 +53,11 @@ def getSourceID(conn, sourceName, version= None):
     if version is None:
         # Get the last version        
         cmd = "SELECT id FROM source WHERE name = %s ORDER BY version DESC LIMIT 1;"
-        curs.execute(cmd, (sourceID,))
+        curs.execute(cmd, (sourceName,))
     else:
         # Get a specific version
         cmd = "SELECT id FROM source WHERE name = %s AND version = %s;"
-        curs.execute(cmd, (sourceID, version))
+        curs.execute(cmd, (sourceName, version))
 
     sourceID = curs.fetchone()[0]
     conn.commit()
@@ -527,10 +527,6 @@ def addSynonymsFromFile(conn, fname, sourceID, extIDindex= None, extIDfield= Non
                 synTypes = []
                 for i in synonymsIndices:
                     synTypes.append('Name')
-
-        if synonymsIndices is None:
-            # No synonyms columns have been indicated
-            break
 
         molcount = 0
         for line in f:
