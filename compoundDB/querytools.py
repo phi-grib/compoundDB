@@ -130,6 +130,7 @@ def deleteSource(conn, sourceID):
     """
     Deletes and source and all its associated substances.
     """
+    curs = conn.cursor()
     cmd = "DELETE FROM public.source WHERE id=%s"
     curs.execute(cmd, (sourceID,))
     conn.commit()
