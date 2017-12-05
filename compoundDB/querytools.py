@@ -88,6 +88,28 @@ def getAllSourcesWithInfo(conn):
 
     return df
 
+def getAllSourcesWithInfoLimitSubstances(conn, ids):
+    """
+    Return a pandas dataframe with all sources and the number of substances and compounds
+    by version.
+    Arguments:
+          - conn: psycopg2 connection to the database.
+          - ids: Tuple with external IDs of compounds to consider.
+    """
+    cmd = "SELECT name, version, \
+                  COUNT(DISTINCT subs.externalid) AS entries, \
+                  COUNT(DISTINCT subs.externalid) FILTER (WHERE subs.smiles IS NOT NULL) AS substances, \
+                  COUNT(DISTINCT cmpd.inchikey) AS compounds \
+	       FROM public.source as s \
+           INNER JOIN public.substance AS subs ON s.id = subs.sourceid\
+	       LEFT OUTER JOIN public.subs_cmpd AS sc ON sc.subsid = subs.id \
+	       LEFT OUTER JOIN public.compound AS cmpd ON sc.cmpdid = cmpd.id \
+           WHERE subs.externalid in {} \
+	       GROUP BY name, version".format(str(ids))
+    df = pd.read_sql(cmd, con=conn)
+
+    return df
+
 def getOneSourceWithInfo(conn, sourceID= None, sourceName= None, version= None):
     """
     Return a pandas dataframe with all sources and the number of substances and compounds
