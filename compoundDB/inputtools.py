@@ -63,9 +63,9 @@ def addSource(conn, sourceName, version= None, description= None, link= None, \
         oldVersion = curs.fetchone()
         conn.commit()
         if oldVersion is None:
-            version = 1
+            version = '1'
         else:
-            version += int(oldVersion[0])
+            version += str(int(oldVersion[0]))
             
     cmd = "SELECT id FROM source WHERE name = %s AND version = %s;"
     curs.execute(cmd, (sourceName, version))
@@ -348,6 +348,112 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname, extIDindex= None, extIDfie
 
             if not linkIndex: link = None
             else: link= fields[linkIndex]
+
+            # Add the subsance
+            try:
+                mol = Chem.MolFromSmiles(smi)
+            except:
+                (subsID, mol) = addEmptySubstance(conn, sourceID, extID, link)
+            else:
+                (subsID, mol) = addSubstance(conn, sourceID, extID= extID, smiles= smi, \
+                                                mol= mol, link= link)
+                
+            # Add synonyms
+            synD = {'ExternalID': set([extID])}
+            if synonymsIndices:
+                for i in range(len(synonymsIndices)):
+                    sindex = synonymsIndices[i]
+                    stype = synTypes[i]
+                    if len(fields) <= sindex: continue
+                    syn = fields[sindex].strip()
+                    if syn == 'N/A' or syn == '': continue
+                    if stype not in synD:
+                        synD[stype] = set([syn])
+                    else:
+                        synD.add(syn)
+            addSynonyms(conn, subsID, synD)
+
+def addSubstanceFromCASFile(conn, sourceID, fname, extIDindex= None, extIDfield= None, CASindex= None, CASfield= None, linkIndex= None, linkField= None, synonymsIndices= None, synonymsFields= None, header= False):
+    """
+        Process a text file with smiles strings of substances from a given source.
+        Arguments:
+          - conn: psycopg2 connection to the database.
+          - sourceID: id for the source of origin from the 'source' table.
+          - fname: Input file name.
+          - extIDindex: Optional. Index of the column containing the id of the substance in the source of origin (default: None). If None, the CAS number will be used as external ID.
+          - extIDfield: Optional. Name of the header of the column containing the substance id (default: None). If None, the CAS number will be used as external ID.
+          - CASindex: Optional. Index of the column containing the substance's CAS number (default: 1). 
+          - CASfield: Optional. Name of the header of the column containing the substance's CAS number (default: 'smiles').
+          - linkIndex: Optional. Index of the column containing a link to the substance information page (default: None). 
+          - linkField: Optional. Name of the header of the column containing a link to the substance information page (default: None).
+          - synonymsIndices: Optional. List of indices of the column(s) containing synonyms of the substance (default: None). Synonym type will be 'Name'.
+          - synonymsFields: Optional. List of name(s) of the header of the column(s) containing synonyms of the substance (default: None). 
+          - header: Boolean indicating if the file has a header (default: False).
+    """
+    curs = conn.cursor()          
+    with open(fname) as f:
+        if header: 
+            header = f.readline().rstrip().split('\t')
+            if extIDfield:
+                extIDindex = header.index(extIDfield)
+
+            if CASfield:
+                CASindex = header.index(CASfield)
+
+            if linkField:
+                linkIndex = header.index(linkField)
+
+            if synonymsFields:
+                synTypes = synonymsFields
+                synonymsIndices = []
+                for t in synTypes:
+                    synonymsIndices.append(header.index(t))
+
+            elif synonymsIndices:
+                synTypes = []
+                for i in synonymsIndices:
+                    synTypes.append(header[i].strip())
+
+        else:
+            # If the file has no header and some columns contain synonyms, 
+            # set each synonym type to 'Name'
+            if synonymsIndices:
+                synonymsIndices = synonymsIndices
+                synTypes = []
+                for i in synonymsIndices:
+                    synTypes.append('Name')
+
+        if extIDindex is None:
+            extIDindex = CASindex
+
+        molcount = 0
+        for line in f:
+            molcount += 1
+            fields = line.rstrip().split('\t')
+            try:
+                CAS = fields[CASindex]
+            except:
+                continue
+
+            if extIDindex is None:
+                # No field with the ID of the substance in the source of origin 
+                # has been provided so one will be generated.
+                extID = CAS
+            else:
+                try:
+                    extID = fields[extIDindex]
+                except:
+                    extID = CAS
+
+            if not linkIndex: link = None
+            else: link= fields[linkIndex]
+
+            # Get smiles from CAS
+            # First check if it's already in the DB
+            smi = qt.getStructureFromSyn(conn, syn= CAS)
+            if not smi:
+                # Otherwise, try to resolve it through web services
+                smi = mh.resolveCAS(cas= CAS)
 
             # Add the subsance
             try:
