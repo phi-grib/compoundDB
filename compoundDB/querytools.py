@@ -49,29 +49,106 @@ def getSourceID(conn, sourceName, version= None):
 
     return sourceID
 
+def getStructureFromSyn(conn, syn):
+    """
+    Return the smiles for the given synonym.
+    Arguments:
+          - conn: psycopg2 connection to the database.
+          - syn: Synonym.
+    """
+    curs = conn.cursor()
+    cmd = "SELECT smiles \
+            FROM substance AS subs \
+            INNER JOIN synonym AS syn ON subs.id = syn.subsid\
+            WHERE name = %s;"
+    curs.execute(cmd, (syn,))
+    smiles = curs.fetchone()
+    conn.commit()
+
+    if smiles is not None:
+        smiles = smiles[0]
+
+    return smiles
+
 def getAllSourcesWithInfo(conn):
     """
     Return a pandas dataframe with all sources and the number of substances and compounds
     by version.
     """
-    cmd = "SELECT name, version, COUNT(subs.id) AS substances, \
+    cmd = "SELECT name, version, \
+                  COUNT(DISTINCT subs.externalid) AS entries, \
+                  COUNT(DISTINCT subs.externalid) FILTER (WHERE subs.smiles IS NOT NULL) AS substances, \
                   COUNT(DISTINCT cmpd.inchikey) AS compounds \
-	       FROM public.substance AS subs \
-	       INNER JOIN public.source AS s ON s.id = subs.sourceid \
+	       FROM public.source as s \
+           INNER JOIN public.substance AS subs ON s.id = subs.sourceid\
 	       LEFT OUTER JOIN public.subs_cmpd AS sc ON sc.subsid = subs.id \
 	       LEFT OUTER JOIN public.compound AS cmpd ON sc.cmpdid = cmpd.id \
-	       WHERE subs.smiles IS NOT NULL \
 	       GROUP BY name, version"
     df = pd.read_sql(cmd, con=conn)
 
     return df
+
+def getOneSourceWithInfo(conn, sourceID= None, sourceName= None, version= None):
+    """
+    Return a pandas dataframe with all sources and the number of substances and compounds
+    by version.
+    Arguments:
+        - conn: psycopg2 connection to the database.
+        - sourceID: Optional. Internal source ID if avaialble. Otherwise, it will be retrieved    from the source name and version.
+        - sourceName: Optional. Source name.
+        - version: Optional. Source's version (default: None). If None, 
+          the last version will be used.
+    """
+    if sourceID is None:
+        sourceID = getSourceID(conn, sourceName, version)
+
+    cmd = "SELECT name, version, \
+                  COUNT(DISTINCT subs.externalid) AS entries, \
+                  COUNT(DISTINCT subs.externalid) FILTER (WHERE subs.smiles IS NOT NULL) AS substances, \
+                  COUNT(DISTINCT cmpd.inchikey) AS compounds \
+	       FROM public.source as s \
+           INNER JOIN public.substance AS subs ON s.id = subs.sourceid\
+	       LEFT OUTER JOIN public.subs_cmpd AS sc ON sc.subsid = subs.id \
+	       LEFT OUTER JOIN public.compound AS cmpd ON sc.cmpdid = cmpd.id \
+           WHERE s.id = %s \
+	       GROUP BY name, version"
+    df = pd.read_sql(cmd, con=conn, params=(sourceID,))
+
+    return df
+
+# def getMulipleSourcesWithInfo(conn, sourceID= None, sourceName= None, version= None):
+#     """
+#     Return a pandas dataframe with all sources and the number of substances and compounds
+#     by version.
+#     Arguments:
+#         - conn: psycopg2 connection to the database.
+#         - sourceID: Optional. List of internal source IDs if avaialble. Otherwise, they will be retrieved from the source name and version.
+#         - sourceName: Optional. List of source names.
+#         - version: Optional. List of source versions (default: None). If None, 
+#           the last version will be used.
+#     """
+#     if sourceID is None:
+#         sourceID = getSourceID(conn, sourceName, version)
+
+#     cmd = "SELECT name, version, \
+#                   COUNT(DISTINCT subs.externalid) AS entries, \
+#                   COUNT(DISTINCT subs.externalid) FILTER (WHERE subs.smiles IS NOT NULL) AS substances, \
+#                   COUNT(DISTINCT cmpd.inchikey) AS compounds \
+# 	       FROM public.source as s \
+#            INNER JOIN public.substance AS subs ON s.id = subs.sourceid\
+# 	       LEFT OUTER JOIN public.subs_cmpd AS sc ON sc.subsid = subs.id \
+# 	       LEFT OUTER JOIN public.compound AS cmpd ON sc.cmpdid = cmpd.id \
+# 	       GROUP BY name, version"
+#     df = pd.read_sql(cmd, con=conn)
+
+#     return df
 
 def getSubstancesFromSource(conn, sourceID= None, sourceName= None, version= None, includeempty= False):
     """
     Retruns a pandas dataframe with all substances for the given source.
     Arguments:
         - conn: psycopg2 connection to the database.
-        - sourceID: Optional. Internal source ID if avaialble. Otherwise, it will be retrieved    from he source name and version.
+        - sourceID: Optional. Internal source ID if avaialble. Otherwise, it will be retrieved    from the source name and version.
         - sourceName: Optional. Source name.
         - version: Optional. Source's version (default: None). If None, 
           the last version will be used.
