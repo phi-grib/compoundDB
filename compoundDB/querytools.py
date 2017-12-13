@@ -168,6 +168,12 @@ def getOneSourceWithInfo(conn, sourceID= None, sourceName= None, version= None):
 def getSubstancesFromSource(conn, sourceID= None, sourceName= None, version= None, includeempty= False):
     """
     Retruns a pandas dataframe with all substances for the given source.
+    The dataframe contains:
+        - exernalid
+        - smiles
+        - inchi
+        - inchikey
+        - link
     Arguments:
         - conn: psycopg2 connection to the database.
         - sourceID: Optional. Internal source ID if avaialble. Otherwise, it will be retrieved    from the source name and version.
@@ -195,6 +201,31 @@ def getSubstancesFromSource(conn, sourceID= None, sourceName= None, version= Non
 
     return df
     
+def getSubstancesFromSynonyms(conn, synList):
+    """
+    Retruns a pandas dataframe with all substances for the given source.
+    The dataframe contains:
+        - synonym
+        - exernalid
+        - smiles
+        - inchi
+        - inchikey
+        - link 
+    Arguments:
+        - conn: psycopg2 connection to the database.
+        - synList: List or tuple with synonyms.
+    """
+    cmd = "SELECT DISTINCT ON (synonym, externalid) \
+            name AS synonym, externalid, smiles, inchi, inchikey, link \
+            FROM public.synonym AS syn \
+            LEFT JOIN public.substance AS subs ON syn.subsid = subs.id \
+            WHERE name in {}".format(tuple(synList))
+
+    df = pd.read_sql(cmd, con=conn)
+
+    return df
+
+
 def getCompoundsFromSource(conn, sourceID= None, sourceName= None, version= None, includeempty= False):
     """
     Retruns a pandas dataframe with all compounds for the given source.

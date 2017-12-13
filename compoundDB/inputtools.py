@@ -490,7 +490,7 @@ def addSubstanceSDFile(conn, sourceID, fname, extIDfield= None, linkField= None,
           - synonymsFields: Optional. List of name(s) of the field(s) containing synonyms of the substance (default: None). 
     """
     curs = conn.cursor()
-    suppl = SDMolSupplier(fname)
+    suppl = Chem.SDMolSupplier(fname)
     molcount = 0
     for mol in suppl:
         molcount += 1
