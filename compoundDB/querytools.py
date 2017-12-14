@@ -104,9 +104,9 @@ def getAllSourcesWithInfoLimitSubstances(conn, ids):
            INNER JOIN public.substance AS subs ON s.id = subs.sourceid\
 	       LEFT OUTER JOIN public.subs_cmpd AS sc ON sc.subsid = subs.id \
 	       LEFT OUTER JOIN public.compound AS cmpd ON sc.cmpdid = cmpd.id \
-           WHERE subs.externalid in {} \
-	       GROUP BY name, version".format(str(ids))
-    df = pd.read_sql(cmd, con=conn)
+           WHERE subs.externalid in %s \
+	       GROUP BY name, version"
+    df = pd.read_sql(cmd, con=conn, params= (ids,))
 
     return df
 
@@ -215,13 +215,14 @@ def getSubstancesFromSynonyms(conn, synList):
         - conn: psycopg2 connection to the database.
         - synList: List or tuple with synonyms.
     """
+    synList = tuple(synList)
     cmd = "SELECT DISTINCT ON (synonym, externalid) \
             name AS synonym, externalid, smiles, inchi, inchikey, link \
             FROM public.synonym AS syn \
             LEFT JOIN public.substance AS subs ON syn.subsid = subs.id \
-            WHERE name in {}".format(tuple(synList))
+            WHERE name in %s"
 
-    df = pd.read_sql(cmd, con=conn)
+    df = pd.read_sql(cmd, con=conn, params= (synList,))
 
     return df
 
