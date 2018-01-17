@@ -268,7 +268,7 @@ def addSubstance(conn, sourceID, extID, smiles= None, mol= None, link= None):
         
             stdD = ps.std(mol)
             for smiles in stdD:
-                (cmpd, ismetal) = stdD[smiles]
+                (cmpd, ismetal, passed, errmessage) = stdD[smiles]
                 cmpdID = addCompound(conn, subsID, smiles= smiles, mol= cmpd, ismetal=ismetal)
         else:
             subsID = subsID[0]
