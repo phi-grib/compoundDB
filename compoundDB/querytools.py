@@ -1,7 +1,6 @@
 import sys, datetime
 
 import psycopg2
-from psycopg2 import extras
 from rdkit import Chem
 import pandas as pd
 
@@ -48,27 +47,6 @@ def getSourceID(conn, sourceName, version= None):
     conn.commit()
 
     return sourceID
-
-def getStructureFromSyn(conn, syn):
-    """
-    Return the smiles for the given synonym.
-    Arguments:
-          - conn: psycopg2 connection to the database.
-          - syn: Synonym.
-    """
-    curs = conn.cursor()
-    cmd = "SELECT smiles \
-            FROM substance AS subs \
-            INNER JOIN synonym AS syn ON subs.id = syn.subsid\
-            WHERE name = %s;"
-    curs.execute(cmd, (syn,))
-    smiles = curs.fetchone()
-    conn.commit()
-
-    if smiles is not None:
-        smiles = smiles[0]
-
-    return smiles
 
 def getAllSourcesWithInfo(conn):
     """
@@ -201,6 +179,27 @@ def getSubstancesFromSource(conn, sourceID= None, sourceName= None, version= Non
 
     return df
     
+def getStructureFromSyn(conn, syn):
+    """
+    Return the smiles for the given synonym.
+    Arguments:
+          - conn: psycopg2 connection to the database.
+          - syn: Synonym.
+    """
+    curs = conn.cursor()
+    cmd = "SELECT smiles \
+            FROM substance AS subs \
+            INNER JOIN synonym AS syn ON subs.id = syn.subsid\
+            WHERE name = %s;"
+    curs.execute(cmd, (syn,))
+    smiles = curs.fetchone()
+    conn.commit()
+
+    if smiles is not None:
+        smiles = smiles[0]
+
+    return smiles
+
 def getSubstancesFromSynonyms(conn, synList):
     """
     Retruns a pandas dataframe with all substances for the given source.
@@ -225,7 +224,6 @@ def getSubstancesFromSynonyms(conn, synList):
     df = pd.read_sql(cmd, con=conn, params= (synList,))
 
     return df
-
 
 def getCompoundsFromSource(conn, sourceID= None, sourceName= None, version= None, includeempty= False):
     """
