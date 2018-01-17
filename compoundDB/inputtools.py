@@ -257,9 +257,9 @@ def addSubstance(conn, sourceID, extID, smiles= None, mol= None, link= None):
             if smiles is None:
                 smiles = Chem.MolToSmiles(mol)
 
-            cmd = "INSERT INTO substance (sourceid, externalid, smiles, mol, inchi, inchikey)\
-            VALUES (%s, %s, %s, mol_from_smiles(%s), %s, %s)"
-            curs.execute(cmd, (sourceID, extID, smiles, smiles, inchi, inchikey))
+            cmd = "INSERT INTO substance (sourceid, externalid, smiles, mol, inchi, inchikey, link)\
+            VALUES (%s, %s, %s, mol_from_smiles(%s), %s, %s, %s)"
+            curs.execute(cmd, (sourceID, extID, smiles, smiles, inchi, inchikey, link))
             conn.commit()
             cmd = "SELECT currval('substance_id_seq');"
             curs.execute(cmd)
