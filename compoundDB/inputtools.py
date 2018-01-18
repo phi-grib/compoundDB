@@ -495,23 +495,23 @@ def addSubstanceSDFile(conn, sourceID, fname, extIDfield= None, linkField= None,
     for mol in suppl:
         molcount += 1
         if mol is None:
-            extID = mh.getNameFromEmpty(suppl, molcount-1, extID)
+            extID = mh.getNameFromEmpty(suppl, molcount-1, extIDfield)
             (subsID, mol) = addEmptySubstance(conn, sourceID, extID, link)
             
         else:                
-            extID = mh.getName(mol, molcount, extID)                    
+            extID = mh.getName(mol, molcount, extIDfield)                    
             link = None
-            if linkI:
+            if linkField:
                 try:
-                    link = mol.GetProp(linkI)
+                    link = mol.GetProp(linkField)
                 except:
                     pass
             (subsID, mol) = addSubstance(conn, sourceID, extID= extID, mol= mol, link= link)
         
         # Add synonyms
         synD = {'ExternalID': set([extID])}
-        if synonyms:
-            for synType in synonyms:
+        if synonymsFields:
+            for synType in synonymsFields:
                 try:
                     syn = mol.GetProp(synType)
                     if syn != 'N/A':
