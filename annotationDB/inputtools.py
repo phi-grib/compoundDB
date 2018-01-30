@@ -4,9 +4,8 @@ from compoundDB import querytools as qt
 import psycopg2
 
 annClassification_file = "annD.pkl"
-annC_fh = open(os.path.join(os.path.dirname(__file__), "data",  annClassification_file), 'rb')
-annD = pickle.load(annC_fh)
-annC_fh.close()
+with open(os.path.join(os.path.dirname(__file__), "data",  annClassification_file), 'rb') as annC_fh:
+    annD = pickle.load(annC_fh)
 
 def openconnection(host='gea', dbname='annotations', user='postgres', password=''):
     """
@@ -23,12 +22,24 @@ def openconnection(host='gea', dbname='annotations', user='postgres', password='
 
 def standardiseAnnotation(ann):
     """
+    From a given toxicity annotation return a dictionary with:
+        - Corrected annotation: Standardised annotation.
+        - Category: Toxicity group (CMR, PBT, Physical, etc.)
+        - Type: Annotation type (Confirmed, Suspected, Negative)
+        - General annotation: For certain annotations, a more general classification of the toxicity. i.e. for Carc. 1A the corresponding General Annotation would be 'Carcinogenic'. This allows to group certain types of toxicity with more detail than the category (in this case CMR).
     """
-    d = annD[ann]
-    return d
+    return annD[ann]
 
 def addAnnotation(conn, subsID, ann, annType=None, annCategory=None, generalAnn=None):
     """
+        Add the annotation provided for a given substance to the corresponding table.
+        Arguments:
+          - conn: psycopg2 connection to the database.
+          - subsID: id for the partent subsance from the 'substance' table.
+          - ann: Toxicity annotation. If it cannot be standadized no category or general annotation will be assigned.
+          - annType: Optional. Provide it to overwrite the annotation type from the annD.
+          - annCategory: Optional. Provide it to overwrite the annotation category from the annD.
+          - generalAnn: Optional. Provide it to overwrite the general annotation from the annD.
     """
     ann = ann.strip().strip('\"').strip()
     try:
@@ -76,7 +87,7 @@ def addAnnotation(conn, subsID, ann, annType=None, annCategory=None, generalAnn=
 
 def addSynonyms(conn, subsID, synD):
     """
-        Add all synonyms provided for a given substance.
+        Add all synonyms provided for a given substance to the corresponding table.
         Arguments:
           - conn: psycopg2 connection to the database.
           - subsID: id for the partent subsance from the 'substance' table.
