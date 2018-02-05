@@ -1,5 +1,5 @@
 import sys, os, datetime, pickle
-from compoundDB import querytools as qt
+from annotationDB import querytools as qt
 
 import psycopg2
 
@@ -259,7 +259,7 @@ def addSubstancesFromFile(conn, sourceID, fname, extIDindex= None, extIDfield= N
                 try:
                     extID = fields[extIDindex]
                 except:
-                    continue
+                    extID = 'mol%0.8d'%molcount
 
             if not linkIndex: link = None
             else: link= fields[linkIndex]
