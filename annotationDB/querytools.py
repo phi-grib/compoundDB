@@ -54,7 +54,7 @@ def getAllSourcesWithInfo(conn):
     """
     cmd = "SELECT name, version, \
                   COUNT(DISTINCT subs.externalid) AS entries, \
-                  COUNT(ann.annotation) AS all_annotations \
+                  COUNT(ann.annotation) AS all_annotations, \
                   COUNT(DISTINCT ann.annotation) AS unique_annotations \
 	       FROM public.source as s \
            INNER JOIN public.substance AS subs ON s.id = subs.sourceid\
