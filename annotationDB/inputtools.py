@@ -77,12 +77,12 @@ def addAnnotation(conn, subsID, ann, annType=None, annCategory=None, generalAnn=
     else:
         annID = annID[0]
 
-    cmd = "INSERT INTO subs_ann (subsid, annid, original_annotation, type)\
-           SELECT %s, %s, %s, %s \
-           WHERE NOT EXISTS (SELECT subsid, annid, original_annotation, type \
+    cmd = "INSERT INTO subs_ann (subsid, annid, sourceid, original_annotation, type)\
+           SELECT %s, %s, %s, %s, %s \
+           WHERE NOT EXISTS (SELECT subsid, annid, sourceid, original_annotation, type \
                FROM subs_ann \
                WHERE subsid= %s AND annid= %s)"
-    curs.execute(cmd, (subsID, annID, ann, annType, subsID, annID))
+    curs.execute(cmd, (subsID, annID, sourceID, ann, annType, subsID, annID))
     conn.commit()
 
 def addSynonyms(conn, subsID, synD):
