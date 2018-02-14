@@ -30,7 +30,7 @@ def standardiseAnnotation(ann):
     """
     return annD[ann]
 
-def addAnnotation(conn, subsID, ann, annType=None, annCategory=None, generalAnn=None, sourceID=None):
+def addAnnotation(conn, subsID, ann, annType=None, annCategory=None, generalAnn=None):
     """
         Add the annotation provided for a given substance to the corresponding table.
         Arguments:
@@ -77,22 +77,12 @@ def addAnnotation(conn, subsID, ann, annType=None, annCategory=None, generalAnn=
     else:
         annID = annID[0]
 
-    if sourceID is None:
-        # If the ID from the origin of the compound and the id of the source of the annotation
-        # match, use it.
-        # Otherwise, the source ID for the annotation will be input as an argument
-        cmd = "SELECT sourceid FROM substance \
-                WHERE id = %s;"
-        curs.execute(cmd, (subsID,))
-        sourceID = curs.fetchone()[0]
-        conn.commit()         
-
-    cmd = "INSERT INTO subs_ann (subsid, annid, original_annotation, type)\
-           SELECT %s, %s, %s, %s \
-           WHERE NOT EXISTS (SELECT subsid, annid, original_annotation, type \
+    cmd = "INSERT INTO subs_ann (subsid, annid, sourceid, original_annotation, type)\
+           SELECT %s, %s, %s, %s, %s \
+           WHERE NOT EXISTS (SELECT subsid, annid, sourceid, original_annotation, type \
                FROM subs_ann \
                WHERE subsid= %s AND annid= %s)"
-    curs.execute(cmd, (subsID, annID, ann, annType, subsID, annID))
+    curs.execute(cmd, (subsID, annID, sourceID, ann, annType, subsID, annID))
     conn.commit()
 
 def addSynonyms(conn, subsID, synD):
@@ -124,7 +114,6 @@ def addSource(conn, sourceName, version= None, description= None, link= None, \
           - description: Optional. Verbose description of the source (default: None).
           - link: Optional. Link to the source's home page (default: None).
           - date: Optional. Date of source's creation (default: Today).
-
         Returns source id from the 'source' table.
     """
     curs = conn.cursor()
@@ -166,7 +155,6 @@ def addSubstance(conn, sourceID, extID, link= None):
           - sourceID: id for the source of origin from the 'source' table.
           - extID: id for the subsance in the source of origin.
           - link: Optional. Link to information on the substance (default: None).
-
         Returns the substance id from the 'substance' table.
     """
     curs = conn.cursor()
