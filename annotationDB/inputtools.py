@@ -30,7 +30,7 @@ def standardiseAnnotation(ann):
     """
     return annD[ann]
 
-def addAnnotation(conn, subsID, ann, annType=None, annCategory=None, generalAnn=None):
+def addAnnotation(conn, subsID, ann, annType=None, annCategory=None, generalAnn=None, sourceID=None):
     """
         Add the annotation provided for a given substance to the corresponding table.
         Arguments:
@@ -76,6 +76,16 @@ def addAnnotation(conn, subsID, ann, annType=None, annCategory=None, generalAnn=
         conn.commit()
     else:
         annID = annID[0]
+
+    if sourceID is None:
+        # If the ID from the origin of the compound and the id of the source of the annotation
+        # match, use it.
+        # Otherwise, the source ID for the annotation will be input as an argument
+        cmd = "SELECT sourceid FROM substance \
+                WHERE id = %s;"
+        curs.execute(cmd, (subsID,))
+        sourceID = curs.fetchone()[0]
+        conn.commit()         
 
     cmd = "INSERT INTO subs_ann (subsid, annid, original_annotation, type)\
            SELECT %s, %s, %s, %s \
