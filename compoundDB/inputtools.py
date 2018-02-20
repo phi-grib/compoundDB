@@ -65,7 +65,8 @@ def addSource(conn, sourceName, version= None, description= None, link= None, \
         if oldVersion is None:
             version = '1'
         else:
-            version += str(int(oldVersion[0]))
+            version += int(oldVersion[0])
+    version = str(version)
             
     cmd = "SELECT id FROM source WHERE name = %s AND version = %s;"
     curs.execute(cmd, (sourceName, version))
@@ -291,8 +292,7 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname, extIDindex= None, extIDfie
           - synonymsIndices: Optional. List of indices of the column(s) containing synonyms of the substance (default: None). Synonym type will be 'Name'.
           - synonymsFields: Optional. List of name(s) of the header of the column(s) containing synonyms of the substance (default: None). 
           - header: Boolean indicating if the file has a header (default: False).
-    """
-    curs = conn.cursor()          
+    """         
     with open(fname) as f:
         if header: 
             header = f.readline().rstrip().split('\t')
@@ -341,10 +341,7 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname, extIDindex= None, extIDfie
                 try:
                     extID = fields[extIDindex]
                 except:
-                    if smi is None:
-                        continue
-                    else:
-                        extID = 'mol%0.8d'%molcount
+                    extID = 'mol%0.8d'%molcount
 
             if not linkIndex: link = None
             else: link= fields[linkIndex]
@@ -390,7 +387,6 @@ def addSubstanceFromCASFile(conn, sourceID, fname, extIDindex= None, extIDfield=
           - synonymsFields: Optional. List of name(s) of the header of the column(s) containing synonyms of the substance (default: None). 
           - header: Boolean indicating if the file has a header (default: False).
     """
-    curs = conn.cursor()          
     with open(fname) as f:
         if header: 
             header = f.readline().rstrip().split('\t')
@@ -433,7 +429,10 @@ def addSubstanceFromCASFile(conn, sourceID, fname, extIDindex= None, extIDfield=
             try:
                 CAS = fields[CASindex]
             except:
-                continue
+                CAS = None
+            else:
+                if CAS == '-':
+                    CAS = None
 
             if extIDindex is None:
                 # No field with the ID of the substance in the source of origin 
@@ -449,11 +448,10 @@ def addSubstanceFromCASFile(conn, sourceID, fname, extIDindex= None, extIDfield=
             else: link= fields[linkIndex]
 
             # Get smiles from CAS
-            # First check if it's already in the DB
-            smi = qt.getStructureFromSyn(conn, syn= CAS)
-            if not smi:
-                # Otherwise, try to resolve it through web services
-                smi = mh.resolveCAS(cas= CAS)
+            if CAS:
+                smi = mh.resolveCAS(cas= CAS, conn= conn)
+            else:
+                smi = None
 
             # Add the subsance
             try:
@@ -489,7 +487,6 @@ def addSubstanceSDFile(conn, sourceID, fname, extIDfield= None, linkField= None,
           - extIDfield: Optional. Name of the field containing the substance id (default: None). If None, an id will be generated with a substance counter.
           - synonymsFields: Optional. List of name(s) of the field(s) containing synonyms of the substance (default: None). 
     """
-    curs = conn.cursor()
     suppl = Chem.SDMolSupplier(fname)
     molcount = 0
     for mol in suppl:
@@ -575,7 +572,6 @@ def addSynonymsFromFile(conn, fname, sourceID= None, sourceName= None, version= 
         - synonymsFields: Optional. List of name(s) of the header of the column(s) containing synonyms of the substance (default: None). 
         - header: Boolean indicating if the file has a header (default: False).
     """
-    curs = conn.cursor()
     if sourceID is None:
         sourceID = getSourceID(conn, sourceName, version)
     with open(fname) as f:
