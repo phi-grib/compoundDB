@@ -1,12 +1,17 @@
-import sys, datetime
+import sys, datetime, os, pickle
+import psycopg2
+
 from phitools import moleculeHelper as mh
 from standardiser import process_smiles as ps
 from compoundDB import querytools as qt
 
-import psycopg2
 from rdkit import Chem
 from rdkit.Chem.Descriptors import MolWt
 from rdkit.Chem.Crippen import MolLogP
+
+annClassification_file = "annD.pkl"
+with open(os.path.join(os.path.dirname(__file__), "data",  annClassification_file), 'rb') as annC_fh:
+    annD = pickle.load(annC_fh)
 
 def openconnection(host='gea', dbname='compounds', user='postgres', password=''):
     """
@@ -22,6 +27,78 @@ def openconnection(host='gea', dbname='compounds', user='postgres', password='')
     curs.execute('create extension if not exists rdkit;')
 
     return conn
+
+def standardiseAnnotation(ann):
+    """
+    From a given toxicity annotation return a dictionary with:
+        - Corrected annotation: Standardised annotation.
+        - Category: Toxicity group (CMR, PBT, Physical, etc.)
+        - Type: Annotation type (Confirmed, Suspected, Negative)
+        - General annotation: For certain annotations, a more general classification of the toxicity. i.e. for Carc. 1A the corresponding General Annotation would be 'Carcinogenic'. This allows to group certain types of toxicity with more detail than the category (in this case CMR).
+    """
+    return annD[ann]
+
+def addAnnotation(conn, subsID, ann, annType=None, annCategory=None, generalAnn=None, sourceID=None):
+    """
+        Add the annotation provided for a given substance to the corresponding table.
+        Arguments:
+          - conn: psycopg2 connection to the database.
+          - subsID: id for the partent subsance from the 'substance' table.
+          - ann: Toxicity annotation. If it cannot be standadized no category or general annotation will be assigned.
+          - annType: Optional. Provide it to overwrite the annotation type from the annD.
+          - annCategory: Optional. Provide it to overwrite the annotation category from the annD.
+          - generalAnn: Optional. Provide it to overwrite the general annotation from the annD.
+    """
+    ann = ann.strip().strip('\"').strip()
+    try:
+        d = standardiseAnnotation(ann)
+    except:
+        std_ann = ann
+        if not annType:
+            annType = 'Confirmed'
+        annCategory = ''
+        generalAnn = ''
+    else:
+        std_ann = d['Corrected annotation']
+        if not annType:
+            annType = 'Confirmed'
+        if not annCategory:
+            annCategory = d['Category']
+        if not generalAnn:
+            generalAnn = d['GeneralAnnotation']
+    curs = conn.cursor()
+
+    cmd = "SELECT id FROM annotation WHERE annotation = %s;"
+    curs.execute(cmd, (std_ann,))
+    annID = curs.fetchone()
+    conn.commit()
+    
+    if annID is None:      
+        cmd = "INSERT INTO annotation (annotation, general, category)\
+               VALUES (%s, %s, %s)"
+        curs.execute(cmd, (std_ann, generalAnn, annCategory))
+        conn.commit()
+        cmd = "SELECT currval('annotation_id_seq');"
+        curs.execute(cmd)
+        annID = curs.fetchone()[0]
+        conn.commit()
+    else:
+        annID = annID[0]
+
+    if sourceID is None:
+        cmd = "SELECT sourceid FROM substance \
+                WHERE id = %s;"
+        curs.execute(cmd, (subsID,))
+        sourceID = curs.fetchone()[0]
+        conn.commit()
+
+    cmd = "INSERT INTO subs_ann (subsid, annid, sourceid, original_annotation, type)\
+           SELECT %s, %s, %s, %s, %s \
+           WHERE NOT EXISTS (SELECT subsid, annid, sourceid, original_annotation, type \
+               FROM subs_ann \
+               WHERE subsid= %s AND annid= %s)"
+    curs.execute(cmd, (subsID, annID, sourceID, ann, annType, subsID, annID))
+    conn.commit()
 
 def addSynonyms(conn, subsID, synD):
     """
@@ -242,17 +319,17 @@ def addSubstance(conn, sourceID, extID, smiles= None, mol= None, link= None):
         except:
             (subsID, mol) = addEmptySubstance(conn, sourceID, extID, link)
             
-    if mol is None:
-        # Molecule object has been created, but only as an empty instnce
-        (subsID, mol) = addEmptySubstance(conn, sourceID, extID, link)
-    else:
-        cmd = "SELECT id FROM substance WHERE sourceid = %s \
-                AND externalid = %s;"
-        curs.execute(cmd, (sourceID, extID))
-        subsID = curs.fetchone()
-        conn.commit()
+    cmd = "SELECT id FROM substance WHERE sourceid = %s \
+            AND externalid = %s;"
+    curs.execute(cmd, (sourceID, extID))
+    subsID = curs.fetchone()
+    conn.commit()
 
-        if not subsID:
+    if not subsID:
+        if mol is None:
+            # Molecule object has been created, but only as an empty instnce
+            (subsID, mol) = addEmptySubstance(conn, sourceID, extID, link)
+        else:
             inchi = Chem.MolToInchi(mol)
             inchikey = Chem.InchiToInchiKey(inchi)
             if smiles is None:
@@ -271,12 +348,18 @@ def addSubstance(conn, sourceID, extID, smiles= None, mol= None, link= None):
             for smiles in stdD:
                 (cmpd, ismetal, passed, errmessage) = stdD[smiles]
                 cmpdID = addCompound(conn, subsID, smiles= smiles, mol= cmpd, ismetal=ismetal)
-        else:
-            subsID = subsID[0]
+    else:
+        subsID = subsID[0]
             
     return (subsID, mol)
 
-def addSubstanceFromSmilesFile(conn, sourceID, fname, extIDindex= None, extIDfield= None, smilesIndex= 1, smilesField= 'smiles', linkIndex= None, linkField= None, synonymsIndices= None, synonymsFields= None, header= False):
+def addSubstanceFromSmilesFile(conn, sourceID, fname, extIDindex= None, 
+                            extIDfield= None, smilesIndex= 1, smilesField= 'smiles', 
+                            annIndex= None, annField= None, 
+                            annType = None, annTypeField= None, 
+                            annTypeIndex= None,
+                            linkIndex= None, linkField= None, 
+                            synonymsIndices= None, synonymsFields= None, header= True):
     """
         Process a text file with smiles strings of substances from a given source.
         Arguments:
@@ -287,6 +370,9 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname, extIDindex= None, extIDfie
           - extIDfield: Optional. Name of the header of the column containing the substance id (default: None). If None, an id will be generated with a substance counter.
           - smilesIndex: Optional. Index of the column containing the substance's smiles string (default: 1). 
           - smilesField: Optional. Name of the header of the column containing the substance's smiles string (default: 'smiles').
+          - annIndex: Optional. Index of the column containing the substance's annotation (default: 1). 
+          - annField: Optional. Name of the header of the column containing the substance's annotation (default: 'Annotation').
+          - annType: Optional. Type of all the annotations of the substances for this source (default: None). It should be one of the following: 'Confirmed', 'Suspected', 'Negative'.
           - linkIndex: Optional. Index of the column containing a link to the substance information page (default: None). 
           - linkField: Optional. Name of the header of the column containing a link to the substance information page (default: None).
           - synonymsIndices: Optional. List of indices of the column(s) containing synonyms of the substance (default: None). Synonym type will be 'Name'.
@@ -301,6 +387,12 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname, extIDindex= None, extIDfie
 
             if smilesField:
                 smilesIndex = header.index(smilesField)
+
+            if annField:
+                annIndex = header.index(annField)
+
+            if annTypeField:
+                annTypeIndex = header.index(annTypeField)
 
             if linkField:
                 linkIndex = header.index(linkField)
@@ -343,6 +435,14 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname, extIDindex= None, extIDfie
                 except:
                     extID = 'mol%0.8d'%molcount
 
+            try:
+                ann = fields[annIndex]
+            except:
+                ann = None
+            else:
+                if ann == '****':
+                    ann = None
+
             if not linkIndex: link = None
             else: link= fields[linkIndex]
 
@@ -370,7 +470,26 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname, extIDindex= None, extIDfie
                         synD.add(syn)
             addSynonyms(conn, subsID, synD)
 
-def addSubstanceFromCASFile(conn, sourceID, fname, extIDindex= None, extIDfield= None, CASindex= None, CASfield= None, linkIndex= None, linkField= None, synonymsIndices= None, synonymsFields= None, header= False):
+            # Add annotations
+            if ann:
+                if annTypeIndex is not None:
+                    try:
+                        ann_type = fields[annTypeIndex]
+                    except:
+                        ann_type = None
+                else:
+                    ann_type = annType
+                addAnnotation(conn, subsID, ann, ann_type)
+
+def addSubstanceFromCASFile(conn, sourceID, fname, 
+                        extIDindex= None, extIDfield= None, 
+                        CASindex= None, CASfield= None, 
+                        annIndex= None, annField= None, 
+                        annType = None, 
+                        annTypeField= None, annTypeIndex= None, 
+                        linkIndex= None, linkField= None, 
+                        synonymsIndices= None, synonymsFields= None,
+                        updatesmi= False, header= True):
     """
         Process a text file with smiles strings of substances from a given source.
         Arguments:
@@ -381,12 +500,19 @@ def addSubstanceFromCASFile(conn, sourceID, fname, extIDindex= None, extIDfield=
           - extIDfield: Optional. Name of the header of the column containing the substance id (default: None). If None, the CAS number will be used as external ID.
           - CASindex: Optional. Index of the column containing the substance's CAS number (default: 1). 
           - CASfield: Optional. Name of the header of the column containing the substance's CAS number (default: 'smiles').
+          - annIndex: Optional. Index of the column containing the substance's annotation (default: 1). 
+          - annField: Optional. Name of the header of the column containing the substance's annotation (default: 'Annotation').
+          - annType: Optional. Type of all the annotations of the substances for this source (default: None). It should be one of the following: 'Confirmed', 'Suspected', 'Negative'.
+          - annTypeField: Optional. Name of the header of the column containing all the annotations of the substances for this source (default: None). It should be one of the following: 'Confirmed', 'Suspected', 'Negative'.
+          - annTypeIndex: Optional. Index of the column containing all the annotations of the substances for this source (default: None). It should be one of the following: 'Confirmed', 'Suspected', 'Negative'.
           - linkIndex: Optional. Index of the column containing a link to the substance information page (default: None). 
           - linkField: Optional. Name of the header of the column containing a link to the substance information page (default: None).
           - synonymsIndices: Optional. List of indices of the column(s) containing synonyms of the substance (default: None). Synonym type will be 'Name'.
           - synonymsFields: Optional. List of name(s) of the header of the column(s) containing synonyms of the substance (default: None). 
+          - updatesmi: Even if the substance is already in the DB, force lookup of its structure.
           - header: Boolean indicating if the file has a header (default: False).
     """
+    curs = conn.cursor()
     with open(fname) as f:
         if header: 
             header = f.readline().rstrip().split('\t')
@@ -395,6 +521,12 @@ def addSubstanceFromCASFile(conn, sourceID, fname, extIDindex= None, extIDfield=
 
             if CASfield:
                 CASindex = header.index(CASfield)
+
+            if annField:
+                annIndex = header.index(annField)
+
+            if annTypeField:
+                annTypeIndex = header.index(annTypeField)
 
             if linkField:
                 linkIndex = header.index(linkField)
@@ -444,23 +576,47 @@ def addSubstanceFromCASFile(conn, sourceID, fname, extIDindex= None, extIDfield=
                 except:
                     extID = CAS
 
+            try:
+                ann = fields[annIndex]
+            except:
+                ann = None
+            else:
+                if ann == '****':
+                    ann = None
+
             if not linkIndex: link = None
             else: link= fields[linkIndex]
 
             # Get smiles from CAS
-            if CAS:
-                smi = mh.resolveCAS(cas= CAS, conn= conn)
-            else:
-                smi = None
+            if not updatesmi:
+                cmd = "SELECT id \
+                        FROM substance \
+                        WHERE externalid = %s AND sourceid = %s;"
+                curs.execute(cmd, (extID, sourceID))
+                subsID = curs.fetchone()
+                conn.commit()
 
-            # Add the subsance
-            try:
-                mol = Chem.MolFromSmiles(smi)
-            except:
-                (subsID, mol) = addEmptySubstance(conn, sourceID, extID, link)
+                if subsID is None:
+                    subsfound = False
+                else:
+                    subsID = subsID[0]
+                    subsfound = True
             else:
-                (subsID, mol) = addSubstance(conn, sourceID, extID= extID, smiles= smi, \
-                                                mol= mol, link= link)
+                subsfound = None
+
+            if not subsfound:                
+                if CAS:
+                    smi = mh.resolveCAS(cas= CAS, conn= conn)
+                else:
+                    smi = None
+
+                # Add the subsance
+                try:
+                    mol = Chem.MolFromSmiles(smi)
+                except:
+                    (subsID, mol) = addEmptySubstance(conn, sourceID, extID, link)
+                else:
+                    (subsID, mol) = addSubstance(conn, sourceID, extID= extID, smiles= smi, mol= mol, link= link)
                 
             # Add synonyms
             synD = {'ExternalID': set([extID])}
@@ -477,7 +633,19 @@ def addSubstanceFromCASFile(conn, sourceID, fname, extIDindex= None, extIDfield=
                         synD.add(syn)
             addSynonyms(conn, subsID, synD)
 
-def addSubstanceSDFile(conn, sourceID, fname, extIDfield= None, linkField= None, synonymsFields= None):
+            # Add annotations
+            if ann:
+                if annTypeIndex is not None:
+                    try:
+                        ann_type = fields[annTypeIndex]
+                    except:
+                        ann_type = None
+                else:
+                    ann_type = annType
+                addAnnotation(conn, subsID, ann, ann_type)
+
+def addSubstanceSDFile(conn, sourceID, fname, extIDfield= None, linkField= None, 
+                    annField= None, annType = None, annTypeField= None, synonymsFields= None):
     """
         Process an SD file of substances from a given source.
         Arguments:
@@ -486,6 +654,9 @@ def addSubstanceSDFile(conn, sourceID, fname, extIDfield= None, linkField= None,
           - fname: Input file name.
           - extIDfield: Optional. Name of the field containing the substance id (default: None). If None, an id will be generated with a substance counter.
           - synonymsFields: Optional. List of name(s) of the field(s) containing synonyms of the substance (default: None). 
+          - annField: Optional. Name of the field with the substance's annotation (default: 'Annotation').
+          - annType: Optional. Type of all the annotations of the substances for this source (default: None). It should be one of the following: 'Confirmed', 'Suspected', 'Negative'.
+          - annTypeField: Optional. Name of the field with the type of the substance's annotation (default: None). 
     """
     suppl = Chem.SDMolSupplier(fname)
     molcount = 0
@@ -518,6 +689,20 @@ def addSubstanceSDFile(conn, sourceID, fname, extIDfield= None, linkField= None,
                 except:
                     pass
         addSynonyms(conn, subsID, synD)
+        
+        # Add annotations
+        if annField:
+            try:
+                ann = mol.GetProp(annField)
+            except:
+                continue
+            ann_type = annType
+            if annTypeField:
+                try:
+                    ann_type = mol.GetProp(annField)
+                except:
+                    pass
+            addAnnotation(conn, subsID, ann, ann_type)
 
 def addSubstanceFromQuery(conn, sourceID, cmd, host='gea', dbname='chembl_23', user='postgres', \
                           password='', extIDf= 'ID', smilesF= 'smiles', \
