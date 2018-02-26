@@ -57,10 +57,14 @@ def getAllSourcesWithInfo(conn):
                   COUNT(DISTINCT subs.externalid) AS entries, \
                   COUNT(DISTINCT subs.externalid) FILTER (WHERE subs.smiles IS NOT NULL) AS substances, \
                   COUNT(DISTINCT cmpd.inchikey) AS compounds \
+                  COUNT(ann.annotation) AS all_annotations, \
+                  COUNT(DISTINCT ann.annotation) AS unique_annotations \
 	       FROM public.source as s \
-           INNER JOIN public.substance AS subs ON s.id = subs.sourceid\
+           INNER JOIN public.substance AS subs ON s.id = subs.sourceid \
 	       LEFT OUTER JOIN public.subs_cmpd AS sc ON sc.subsid = subs.id \
 	       LEFT OUTER JOIN public.compound AS cmpd ON sc.cmpdid = cmpd.id \
+	       LEFT OUTER JOIN public.subs_ann AS sa ON sa.subsid = subs.id \
+	       LEFT OUTER JOIN public.annotation AS ann ON sa.annid = ann.id \
 	       GROUP BY name, version"
     df = pd.read_sql(cmd, con=conn)
 
@@ -78,11 +82,15 @@ def getAllSourcesWithInfoLimitSubstances(conn, ids):
                   COUNT(DISTINCT subs.externalid) AS entries, \
                   COUNT(DISTINCT subs.externalid) FILTER (WHERE subs.smiles IS NOT NULL) AS substances, \
                   COUNT(DISTINCT cmpd.inchikey) AS compounds \
+                  COUNT(ann.annotation) AS all_annotations, \
+                  COUNT(DISTINCT ann.annotation) AS unique_annotations \
 	       FROM public.source as s \
            INNER JOIN public.substance AS subs ON s.id = subs.sourceid\
 	       LEFT OUTER JOIN public.subs_cmpd AS sc ON sc.subsid = subs.id \
 	       LEFT OUTER JOIN public.compound AS cmpd ON sc.cmpdid = cmpd.id \
-           WHERE subs.externalid in %s \
+	       LEFT OUTER JOIN public.subs_ann AS sa ON sa.subsid = subs.id \
+	       LEFT OUTER JOIN public.annotation AS ann ON sa.annid = ann.id \
+           WHERE subs.externalid IN %s \
 	       GROUP BY name, version"
     df = pd.read_sql(cmd, con=conn, params= (ids,))
 
@@ -106,10 +114,14 @@ def getOneSourceWithInfo(conn, sourceID= None, sourceName= None, version= None):
                   COUNT(DISTINCT subs.externalid) AS entries, \
                   COUNT(DISTINCT subs.externalid) FILTER (WHERE subs.smiles IS NOT NULL) AS substances, \
                   COUNT(DISTINCT cmpd.inchikey) AS compounds \
+                  COUNT(ann.annotation) AS all_annotations, \
+                  COUNT(DISTINCT ann.annotation) AS unique_annotations \
 	       FROM public.source as s \
            INNER JOIN public.substance AS subs ON s.id = subs.sourceid\
 	       LEFT OUTER JOIN public.subs_cmpd AS sc ON sc.subsid = subs.id \
 	       LEFT OUTER JOIN public.compound AS cmpd ON sc.cmpdid = cmpd.id \
+	       LEFT OUTER JOIN public.subs_ann AS sa ON sa.subsid = subs.id \
+	       LEFT OUTER JOIN public.annotation AS ann ON sa.annid = ann.id \
            WHERE s.id = %s \
 	       GROUP BY name, version"
     df = pd.read_sql(cmd, con=conn, params=(sourceID,))
@@ -254,6 +266,64 @@ def getCompoundsFromSource(conn, sourceID= None, sourceName= None, version= None
     df = pd.read_sql(cmd, con=conn)
 
     return df
+
+def getAnnotationsFromSource(conn, sourceID= None, sourceName= None, version= None):
+    """
+    Retruns a pandas dataframe with all annotations for the given source.
+    Arguments:
+        - conn: psycopg2 connection to the database.
+        - sourceID: Optional. Internal source ID if avaialble. Otherwise, it will be retrieved    from he source name and version.
+        - sourceName: Source name.
+        - version: Optional. Source's version (default: None). If None, 
+          the last version will be used.
+        without a chemical structure.
+    """
+    if sourceID is None:
+        sourceID = getSourceID(conn, sourceName, version)
+
+    if includeempty:
+        cmd = "SELECT externalid, smiles, inchi, inchikey, subs.link \
+                FROM public.substance AS subs \
+                INNER JOIN public.source AS s ON s.id = subs.sourceid \
+                WHERE s.id = %s"
+    else:
+        cmd = "SELECT externalid, smiles, inchi, inchikey, subs.link \
+                FROM public.substance AS subs \
+                INNER JOIN public.source AS s ON s.id = subs.sourceid \
+                WHERE s.id = %s AND smiles IS NOT NULL"
+
+    df = pd.read_sql(cmd, con=conn)
+
+    return df
+
+def getAnnotationsForSynonyms(conn, synList):
+    """
+    Retruns a pandas dataframe with all annotations for the given source.
+    Arguments:
+        - conn: psycopg2 connection to the database.
+        - synList: List or tuple with synonyms.
+    """
+    synList = tuple(synList)
+
+    cmd = "SELECT name, annotation, category, general, sa.type \
+            FROM public.synonym AS syn \
+            LEFT JOIN public.substance AS subs ON syn.subsid = subs.id \
+	        LEFT JOIN public.subs_ann AS sa ON subs.id = sa.subsid \
+            LEFT JOIN public.annotation AS ann ON sa.annid = ann.id \
+            WHERE name IN %s"
+
+    df = pd.read_sql(cmd, con=conn, params= (synList,))
+
+    return df
+
+def getAnnotationsForIDS(conn, idsList):
+    """
+    Retruns a pandas dataframe with all annotations for the given source.
+    Arguments:
+        - conn: psycopg2 connection to the database.
+        - idsList: List or tuple with substances IDs.
+    """
+    idsList = tuple(idsList)
 
 def deleteSource(conn, sourceID):
     """
