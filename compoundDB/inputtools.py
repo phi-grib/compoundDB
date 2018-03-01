@@ -142,7 +142,7 @@ def addSource(conn, sourceName, version= None, description= None, link= None, \
         if oldVersion is None:
             version = '1'
         else:
-            version += int(oldVersion[0])
+            version = int(oldVersion[0]+1)
     version = str(version)
             
     cmd = "SELECT id FROM source WHERE name = %s AND version = %s;"
@@ -353,8 +353,10 @@ def addSubstance(conn, sourceID, extID, smiles= None, mol= None, link= None):
             
     return (subsID, mol)
 
-def addSubstanceFromSmilesFile(conn, sourceID, fname, extIDindex= None, 
-                            extIDfield= None, smilesIndex= 1, smilesField= 'smiles', 
+def addSubstanceFromSmilesFile(conn, sourceID, fname, 
+                            extIDindex= None, extIDfield= None, 
+                            smilesIndex= 1, smilesField= 'smiles', 
+                            ann= None,
                             annIndex= None, annField= None, 
                             annType = None, annTypeField= None, 
                             annTypeIndex= None,
@@ -425,6 +427,7 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname, extIDindex= None,
                 smi = fields[smilesIndex]
             except:
                 smi = None
+
             if extIDindex is None:
                 # No field with the ID of the substance in the source of origin 
                 # has been provided so one will be generated.
@@ -435,13 +438,14 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname, extIDindex= None,
                 except:
                     extID = 'mol%0.8d'%molcount
 
-            try:
-                ann = fields[annIndex]
-            except:
-                ann = None
-            else:
-                if ann == '****':
+            if not ann:
+                try:
+                    ann = fields[annIndex]
+                except:
                     ann = None
+                else:
+                    if ann == '****':
+                        ann = None
 
             if not linkIndex: link = None
             else: link= fields[linkIndex]
@@ -452,7 +456,7 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname, extIDindex= None,
             except:
                 (subsID, mol) = addEmptySubstance(conn, sourceID, extID, link)
             else:
-                (subsID, mol) = addSubstance(conn, sourceID, extID= extID, smiles= smi, \
+                (subsID, mol) = addSubstance(conn, sourceID, extID= extID, smiles= smi, 
                                                 mol= mol, link= link)
                 
             # Add synonyms
@@ -484,6 +488,7 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname, extIDindex= None,
 def addSubstanceFromCASFile(conn, sourceID, fname, 
                         extIDindex= None, extIDfield= None, 
                         CASindex= None, CASfield= None, 
+                        ann= None,
                         annIndex= None, annField= None, 
                         annType = None, 
                         annTypeField= None, annTypeIndex= None, 
@@ -575,14 +580,19 @@ def addSubstanceFromCASFile(conn, sourceID, fname,
                     extID = fields[extIDindex]
                 except:
                     extID = CAS
+            if extIDindex is None:
+                # No field with the ID of the substance in the source of origin 
+                # has been provided so one will be generated.
+                extID = 'mol%0.8d'%molcount
 
-            try:
-                ann = fields[annIndex]
-            except:
-                ann = None
-            else:
-                if ann == '****':
+            if not ann:
+                try:
+                    ann = fields[annIndex]
+                except:
                     ann = None
+                else:
+                    if ann == '****':
+                        ann = None
 
             if not linkIndex: link = None
             else: link= fields[linkIndex]
