@@ -56,7 +56,7 @@ def getAllSourcesWithInfo(conn):
     cmd = "SELECT name, version, \
                   COUNT(DISTINCT subs.externalid) AS entries, \
                   COUNT(DISTINCT subs.externalid) FILTER (WHERE subs.smiles IS NOT NULL) AS substances, \
-                  COUNT(DISTINCT cmpd.inchikey) AS compounds \
+                  COUNT(DISTINCT cmpd.inchikey) AS compounds, \
                   COUNT(ann.annotation) AS all_annotations, \
                   COUNT(DISTINCT ann.annotation) AS unique_annotations \
 	       FROM public.source as s \
@@ -81,7 +81,7 @@ def getAllSourcesWithInfoLimitSubstances(conn, ids):
     cmd = "SELECT name, version, \
                   COUNT(DISTINCT subs.externalid) AS entries, \
                   COUNT(DISTINCT subs.externalid) FILTER (WHERE subs.smiles IS NOT NULL) AS substances, \
-                  COUNT(DISTINCT cmpd.inchikey) AS compounds \
+                  COUNT(DISTINCT cmpd.inchikey) AS compounds, \
                   COUNT(ann.annotation) AS all_annotations, \
                   COUNT(DISTINCT ann.annotation) AS unique_annotations \
 	       FROM public.source as s \
