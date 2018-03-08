@@ -36,6 +36,14 @@ def standardiseAnnotation(ann):
         - Type: Annotation type (Confirmed, Suspected, Negative)
         - General annotation: For certain annotations, a more general classification of the toxicity. i.e. for Carc. 1A the corresponding General Annotation would be 'Carcinogenic'. This allows to group certain types of toxicity with more detail than the category (in this case CMR).
     """
+    if ann in annD:
+        result = annD[ann]
+    else:
+        result = {'Category': '',
+                    'Corrected annotation': ann,
+                    'GeneralAnnotation': 'Mutagen',
+                    'Type': 'Confirmed'}
+
     return annD[ann]
 
 def addAnnotation(conn, subsID, ann, annType=None, annCategory=None, generalAnn=None, sourceID=None):
@@ -61,7 +69,7 @@ def addAnnotation(conn, subsID, ann, annType=None, annCategory=None, generalAnn=
     else:
         std_ann = d['Corrected annotation']
         if not annType:
-            annType = 'Confirmed'
+            annType = d['Type']
         if not annCategory:
             annCategory = d['Category']
         if not generalAnn:
@@ -423,6 +431,7 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname,
         for line in f:
             molcount += 1
             fields = line.rstrip().split('\t')
+
             try:
                 smi = fields[smilesIndex]
             except:
@@ -437,15 +446,6 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname,
                     extID = fields[extIDindex]
                 except:
                     extID = 'mol%0.8d'%molcount
-
-            if not ann:
-                try:
-                    ann = fields[annIndex]
-                except:
-                    ann = None
-                else:
-                    if ann == '****':
-                        ann = None
 
             if not linkIndex: link = None
             else: link= fields[linkIndex]
@@ -475,7 +475,19 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname,
             addSynonyms(conn, subsID, synD)
 
             # Add annotations
-            if ann:
+            annotation = None
+            if not ann:
+                try:
+                    annotation = fields[annIndex]
+                except:
+                    annotation = None
+                else:
+                    if annotation == '****':
+                        annotation = None
+            else:
+                annotation = ann
+            
+            if annotation:
                 if annTypeIndex is not None:
                     try:
                         ann_type = fields[annTypeIndex]
@@ -483,7 +495,7 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname,
                         ann_type = None
                 else:
                     ann_type = annType
-                addAnnotation(conn, subsID, ann, ann_type)
+                addAnnotation(conn, subsID, annotation, ann_type)
 
 def addSubstanceFromCASFile(conn, sourceID, fname, 
                         extIDindex= None, extIDfield= None, 
@@ -585,15 +597,6 @@ def addSubstanceFromCASFile(conn, sourceID, fname,
                 # has been provided so one will be generated.
                 extID = 'mol%0.8d'%molcount
 
-            if not ann:
-                try:
-                    ann = fields[annIndex]
-                except:
-                    ann = None
-                else:
-                    if ann == '****':
-                        ann = None
-
             if not linkIndex: link = None
             else: link= fields[linkIndex]
 
@@ -644,7 +647,19 @@ def addSubstanceFromCASFile(conn, sourceID, fname,
             addSynonyms(conn, subsID, synD)
 
             # Add annotations
-            if ann:
+            annotation = None
+            if not ann:
+                try:
+                    annotation = fields[annIndex]
+                except:
+                    annotation = None
+                else:
+                    if annotation == '****':
+                        annotation = None
+            else:
+                annotation = ann
+
+            if annotation:
                 if annTypeIndex is not None:
                     try:
                         ann_type = fields[annTypeIndex]
@@ -652,9 +667,10 @@ def addSubstanceFromCASFile(conn, sourceID, fname,
                         ann_type = None
                 else:
                     ann_type = annType
-                addAnnotation(conn, subsID, ann, ann_type)
+                addAnnotation(conn, subsID, annotation, ann_type)
 
-def addSubstanceSDFile(conn, sourceID, fname, extIDfield= None, linkField= None, 
+def addSubstanceSDFile(conn, sourceID, fname, extIDfield= None, 
+                    linkField= None, ann= None,
                     annField= None, annType = None, annTypeField= None, synonymsFields= None):
     """
         Process an SD file of substances from a given source.
@@ -701,11 +717,25 @@ def addSubstanceSDFile(conn, sourceID, fname, extIDfield= None, linkField= None,
         addSynonyms(conn, subsID, synD)
         
         # Add annotations
-        if annField:
-            try:
-                ann = mol.GetProp(annField)
-            except:
-                continue
+        annotation = None
+        if not ann:
+            if annField:
+                try:
+                    ann = mol.GetProp(annField)
+                except:
+                    annotation = None
+        else:
+            annotation = ann
+
+        if annotation:
+            if annTypeIndex is not None:
+                try:
+                    ann_type = fields[annTypeIndex]
+                except:
+                    ann_type = None
+            else:
+                ann_type = annType
+                
             ann_type = annType
             if annTypeField:
                 try:
