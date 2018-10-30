@@ -318,7 +318,14 @@ def addSubstance(conn, sourceID, extID, smiles= None, mol= None, link= None):
 
         Returns a tupple with the substance id from the 'substance' table and the RDKit mol object of the standardised substance if available.
     """
-    curs = conn.cursor()
+    curs = conn.cursor()    
+            
+    cmd = "SELECT id FROM substance WHERE sourceid = %s \
+            AND externalid = %s;"
+    curs.execute(cmd, (sourceID, extID))
+    subsID = curs.fetchone()
+    conn.commit()
+
     if smiles is None and mol is None:
         (subsID, mol) = addEmptySubstance(conn, sourceID, extID, link)
     elif mol is None:
@@ -326,12 +333,6 @@ def addSubstance(conn, sourceID, extID, smiles= None, mol= None, link= None):
             mol = Chem.MolFromSmiles(smiles)
         except:
             (subsID, mol) = addEmptySubstance(conn, sourceID, extID, link)
-            
-    cmd = "SELECT id FROM substance WHERE sourceid = %s \
-            AND externalid = %s;"
-    curs.execute(cmd, (sourceID, extID))
-    subsID = curs.fetchone()
-    conn.commit()
 
     if not subsID:
         if mol is None:
@@ -352,10 +353,11 @@ def addSubstance(conn, sourceID, extID, smiles= None, mol= None, link= None):
             subsID = curs.fetchone()[0]
             conn.commit()
         
-            stdD = ps.std(mol)
-            for smiles in stdD:
-                (cmpd, ismetal, passed, errmessage) = stdD[smiles]
-                cmpdID = addCompound(conn, subsID, smiles= smiles, mol= cmpd, ismetal=ismetal)
+            stdD = ps.std(mol, returnMetals=True)
+            for cmpd_smiles in stdD:
+                (cmpd_mol, ismetal, passed, errmessage) = stdD[cmpd_smiles]
+                if ismetal or passed or errmessage == 'Multiple non-salt/solvate components':
+                    cmpdID = addCompound(conn, subsID, smiles= cmpd_smiles, ismetal=ismetal)
     else:
         subsID = subsID[0]
             
@@ -862,3 +864,85 @@ def addSynonymsFromFile(conn, fname, sourceID= None, sourceName= None, version= 
                     else:
                         synD.add(syn)
             addSynonyms(conn, subsID, synD)
+
+def addAnnotationsFromFile(conn, sourceID, fname, 
+                            extIDindex= None, extIDfield= None, 
+                            ann= None,
+                            annIndex= None, annField= None, 
+                            annType = None, annTypeField= None, 
+                            annTypeIndex= None,
+                            header= True):
+    """
+        Process a text file with smiles strings of substances from a given source.
+        Arguments:
+          - conn: psycopg2 connection to the database.
+          - sourceID: id for the source of origin from the 'source' table.
+          - fname: Input file name.
+          - extIDindex: Optional. Index of the column containing the id of the substance in the source of origin (default: None). If None, an id will be generated with a substance counter.
+          - extIDfield: Optional. Name of the header of the column containing the substance id (default: None). If None, an id will be generated with a substance counter.
+          - smilesIndex: Optional. Index of the column containing the substance's smiles string (default: 1). 
+          - smilesField: Optional. Name of the header of the column containing the substance's smiles string (default: 'smiles').
+          - annIndex: Optional. Index of the column containing the substance's annotation (default: 1). 
+          - annField: Optional. Name of the header of the column containing the substance's annotation (default: 'Annotation').
+          - annType: Optional. Type of all the annotations of the substances for this source (default: None). It should be one of the following: 'Confirmed', 'Suspected', 'Negative'.
+          - linkIndex: Optional. Index of the column containing a link to the substance information page (default: None). 
+          - linkField: Optional. Name of the header of the column containing a link to the substance information page (default: None).
+          - synonymsIndices: Optional. List of indices of the column(s) containing synonyms of the substance (default: None). Synonym type will be 'Name'.
+          - synonymsFields: Optional. List of name(s) of the header of the column(s) containing synonyms of the substance (default: None). 
+          - header: Boolean indicating if the file has a header (default: False).
+    """         
+    with open(fname) as f:
+        if header: 
+            header_names = f.readline().rstrip().split('\t')
+            if extIDfield:
+                extIDindex = header_names.index(extIDfield)
+
+            if annField:
+                annIndex = header_names.index(annField)
+
+            if annTypeField:
+                annTypeIndex = header_names.index(annTypeField)
+
+        molcount = 0
+        for line in f:
+            molcount += 1
+            fields = line.rstrip().split('\t')
+
+            if extIDindex is None:
+                # No field with the ID of the substance in the source of origin 
+                # has been provided so one will be generated.
+                extID = 'mol%0.8d'%molcount
+            else:
+                try:
+                    extID = fields[extIDindex]
+                except:
+                    extID = 'mol%0.8d'%molcount
+
+            # Get the subsance ID
+            try:
+                subsID = qt.getSubsID(conn, sourceID, extID)
+            except:
+                continue
+
+            # Add annotations
+            annotation = None
+            if not ann:
+                try:
+                    annotation = fields[annIndex]
+                except:
+                    annotation = None
+                else:
+                    if annotation == '****':
+                        annotation = None
+            else:
+                annotation = ann
+            
+            if annotation:
+                if annTypeIndex is not None:
+                    try:
+                        ann_type = fields[annTypeIndex]
+                    except:
+                        ann_type = None
+                else:
+                    ann_type = annType
+                addAnnotation(conn, subsID, annotation, ann_type)
