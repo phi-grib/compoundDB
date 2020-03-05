@@ -1,9 +1,14 @@
 import sys, datetime, os, pickle
+import pandas as pd
 import psycopg2
+import pubchempy as pcp
+import time
 
 from phitools import moleculeHelper as mh
 from standardiser import process_smiles as ps
 from compoundDB import querytools as qt
+
+from typing import *
 
 from rdkit import Chem
 from rdkit.Chem.Descriptors import MolWt
@@ -133,7 +138,8 @@ def addSource(conn, sourceName, version= None, description= None, link= None, \
         Arguments:
           - conn: psycopg2 connection to the database.
           - sourceName: Source name.
-          - version: Optional. Source's version (default: None). If None, if another source with the same name exists the version will be increased by one, else the version will be 1.
+          - version: Optional. Source's version (default: None). If None, if another source with the same name \
+            exists the version will be increased by one, else the version will be 1.
           - description: Optional. Verbose description of the source (default: None).
           - link: Optional. Link to the source's home page (default: None).
           - date: Optional. Date of source's creation (default: Today).
@@ -152,7 +158,7 @@ def addSource(conn, sourceName, version= None, description= None, link= None, \
         else:
             version = int(oldVersion[0]+1)
     version = str(version)
-            
+    
     cmd = "SELECT id FROM source WHERE name = %s AND version = %s;"
     curs.execute(cmd, (sourceName, version))
     sourceID = curs.fetchone()
@@ -170,6 +176,18 @@ def addSource(conn, sourceName, version= None, description= None, link= None, \
     else:
         sourceID = sourceID[0]
     
+    ### Check latest. Set to False if the version is not the last one. Otherwise, True
+
+    cmd= "UPDATE source\
+            SET latest= CASE\
+                WHEN version = (SELECT max(version) FROM source WHERE name='{}')\
+                THEN True\
+                ELSE False\
+                END\
+            where name='{}';"
+    curs.execute(cmd.format(sourceName,sourceName))
+    conn.commit()
+
     return sourceID
 
 def addEmptyCompound(conn, subsID, smiles):
@@ -264,11 +282,17 @@ def addCompound(conn, subsID, smiles= None, mol= None, ismetal=False):
             conn.commit()
         else:
             cmpdID = cmpdID[0]
-            
-    cmd = "INSERT INTO subs_cmpd (subsid, cmpdid)\
-       VALUES (%s, %s)"
+    
+    cmd = "SELECT subsid, cmpdid FROM subs_cmpd WHERE subsid = %s AND cmpdid = %s;"
     curs.execute(cmd, (subsID, cmpdID))
+    subs_cmpid = curs.fetchone()
     conn.commit()
+    
+    if subs_cmpid is None:
+        cmd = "INSERT INTO subs_cmpd (subsid, cmpdid)\
+        VALUES (%s, %s)"
+        curs.execute(cmd, (subsID, cmpdID))
+        conn.commit()
     
     return cmpdID
 
@@ -286,6 +310,7 @@ def addEmptySubstance(conn, sourceID, extID, link= None):
     curs = conn.cursor()
     cmd = "SELECT id FROM substance WHERE sourceid = %s \
             AND externalid = %s;"
+    
     curs.execute(cmd, (sourceID, extID))
     subsID = curs.fetchone()
     conn.commit()
@@ -352,12 +377,16 @@ def addSubstance(conn, sourceID, extID, smiles= None, mol= None, link= None):
             curs.execute(cmd)
             subsID = curs.fetchone()[0]
             conn.commit()
-        
-            stdD = ps.std(mol, returnMetals=True)
-            for cmpd_smiles in stdD:
-                (cmpd_mol, ismetal, passed, errmessage) = stdD[cmpd_smiles]
-                if ismetal or passed or errmessage == 'Multiple non-salt/solvate components':
-                    cmpdID = addCompound(conn, subsID, smiles= cmpd_smiles, ismetal=ismetal)
+
+            try:
+                stdD = ps.std(mol, returnMetals=True)
+                for cmpd_smiles in stdD:
+                    (cmpd_mol, ismetal, passed, errmessage) = stdD[cmpd_smiles]
+                    if ismetal or passed or errmessage == 'Multiple non-salt/solvate components':
+                        cmpdID = addCompound(conn, subsID, smiles= cmpd_smiles, ismetal=ismetal)
+            except:
+                cmpdID = addCompound(conn, subsID)
+
     else:
         subsID = subsID[0]
             
@@ -392,7 +421,8 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname,
           - header: Boolean indicating if the file has a header (default: False).
     """         
     with open(fname) as f:
-        if header: 
+
+        if header:
             header = f.readline().rstrip().split('\t')
             if extIDfield:
                 extIDindex = header.index(extIDfield)
@@ -498,6 +528,284 @@ def addSubstanceFromSmilesFile(conn, sourceID, fname,
                 else:
                     ann_type = annType
                 addAnnotation(conn, subsID, annotation, ann_type)
+
+def processCASfromPandas(cas_:str) -> Union[str,list]:
+    """
+        Process CAS field from the dataframe, either getting a clean string of one CAS or
+        a list of CAS
+
+        Arguments:
+            - cas_: content from CAS field in the dataframe
+        
+        Returns:
+            - cas_proc: is either a string or a list containing the processed CAS related to
+            the substance
+    """
+
+    preproc_cas = cas_.split(',')
+
+    if len(preproc_cas) > 1:
+        cas_proc = [cas_element.replace("'","").strip() for cas_element in preproc_cas]
+        if '-' in cas_proc:
+            cas_proc.remove('-')
+    else:
+        cas_proc = str(preproc_cas).strip('[').strip(']').replace("'","")
+
+    return cas_proc
+
+def getresultsfromPubChem(casrn: str) -> list:
+    """
+        Get results from PubChem using the API. Checks for HTTPErrors and puts to sleep the
+        code in order to avoid timeout error or bad gateaway error.
+
+        Arguments:
+            - casrn: CAS number
+        
+        Returns:
+            - results: list with names from PubChem
+        
+        TODO: make counter up to 5 requests then time.sleep for 2 seconds. Catch exception.
+    """
+    try:
+        results = pcp.get_compounds(casrn, 'name')
+    except:
+        results = None
+    
+    return results
+
+def rerieveSMILESfromMHorPubChem(casrn: str, conn: psycopg2.extensions.connection) -> Optional[str]:
+    """
+        If molecule helper can't get SMILES, it uses PubChem API to check for SMILES
+        string from CAS number
+
+        Arguments:
+            - casrn: CAS number
+            - conn: connector to Database
+        
+        Return:
+            - smi: canonical SMILES from CAS in PubChem
+    """
+    smi = mh.resolveCAS(cas= casrn, conn= conn)
+    
+    if smi:
+        return smi
+    else:
+        struc_list = []
+        results = getresultsfromPubChem(casrn)
+        if results:
+            for compound in results:
+                smiles = compound.canonical_smiles
+                struc_list.append(smiles)
+            if len(struc_list) > 1:
+                struc_list = list(set(struc_list))
+            smi = struc_list[0]
+        else:
+            smi = None
+        return smi
+
+def getSMILESfromCAS(row_df: pd.DataFrame, casrn:str, updatesmi: Optional[str], extID: str, sourceID: int,
+                    conn: psycopg2.extensions.connection,
+                    curs: psycopg2.extensions.cursor, link: str, smilesField: Optional[str] = None) -> str:
+    """
+        Retrieves SMILES from CAS
+
+        Arguments:
+            - casrn: CAS number
+            - updatesmi:
+            - extID:
+            - sourceID:
+            - conn:
+            - curs:
+            - link:
+        
+        Return:
+            - smi: SMILES string from CAS
+            - subsID: substance id from the db
+    """
+
+    if not updatesmi:
+        cmd = "SELECT id \
+                FROM substance \
+                WHERE externalid = %s AND sourceid = %s;"
+        curs.execute(cmd, (extID, sourceID))
+        subsID = curs.fetchone()
+        conn.commit()
+
+        if subsID is None:
+            subsfound = False
+        else:
+            subsID = subsID[0]
+            subsfound = True
+    else:
+        subsfound = None
+
+    if not subsfound:
+        if smilesField:
+            smi = row_df[smilesField]                
+        elif casrn:
+            smi = rerieveSMILESfromMHorPubChem(casrn, conn)
+        else:
+            smi = None
+        
+        # Add the subsance
+        try:
+            mol = Chem.MolFromSmiles(smi)
+        except:
+            (subsID, mol) = addEmptySubstance(conn, sourceID, extID, link)
+        else:
+            (subsID, mol) = addSubstance(conn, sourceID, extID= extID, smiles= smi, 
+                                        mol= mol, link= link)
+
+    return subsID
+
+def addSynonymsFromCASpandasDf(row_df: pd.Series, synonym_fields: list, extID: str, 
+                                subsID: int, conn: psycopg2.extensions.connection):
+    """
+        Adds synonyms to the database
+
+        Arguments:
+            - row_df: Dataframe row with substance information
+            - synonym_fields: column names where Synonyms are
+            - extID: CAS number
+            - subsID: substance ID given in the database
+    """
+
+    synD = {'ExternalID': set([extID])}
+    if synonym_fields:
+        for synonym in synonym_fields:
+            syn = row_df[synonym].strip()
+            if syn == 'N/A' or syn == '': 
+                continue
+            if synonym not in synD:
+                synD[synonym] = set([syn])
+            else:
+                synD[synonym].add(syn)
+    
+    addSynonyms(conn, subsID, synD)
+
+def addAnnotationsFromPandasDf(row_df: pd.Series, annotation_field: str, subsid: int, 
+                            annotation_type: str, conn:psycopg2.extensions.connection):
+    """
+        Add annotations from pandas dataframe
+
+        Arguments:
+            - row_df: dataframe row
+            - annotation_field: column in the dataframe with annotation information
+            - subsid: substance id from the database
+            - annotation_type: type of annotation to check
+            - conn: connection to the database
+    """
+
+    try:
+        annotation = row_df[annotation_field]
+    except:
+        annotation = None
+    else:
+        if annotation == '****':
+            annotation = None
+    
+    if annotation:
+        if annotation_type is not None:
+            try:
+                ann_type = row_df[annotation_type]
+            except:
+                ann_type = None
+        else:
+            ann_type = annotation_type
+        
+        addAnnotation(conn, subsid, annotation, ann_type)
+
+def addSubstanceFromPandasDf(conn, sourceID, dataframe, 
+                        extIDindex= None, extIDfield= None, 
+                        CASindex= None, CASfield= None, 
+                        ann= None, smilesField= None,
+                        annIndex= None, annField= None, 
+                        annType = None, 
+                        annTypeField= None, annTypeIndex= None, 
+                        linkIndex= None, linkField= None, 
+                        synonymsIndices= None, synonymsFields= None,
+                        updatesmi= False):
+    """
+        Extracts the necessary fields from a Pandas Dataframe that comes from
+        processing the source file.
+
+        Arguments:
+            - conn: psycopg2 connection to the database.
+            - sourceID: id for the source of origin from the 'source' table.
+            - dataframe: input dataframe
+            - extIDindex: Optional. Index of the column containing the id of the substance in the source of origin (default: None). If None, the CAS number will be used as external ID.
+            - extIDfield: Optional. Name of the header of the column containing the substance id (default: None). If None, the CAS number will be used as external ID.
+            - CASindex: Optional. Index of the column containing the substance's CAS number (default: None). 
+            - CASfield: Optional. Name of the header of the column containing the substance's CAS number (default: None).
+            - smilesField: Optional. Name of the header of the column containing the substance's smiles string (default: None).
+            - annIndex: Optional. Index of the column containing the substance's annotation (default: None). 
+            - annField: Optional. Name of the header of the column containing the substance's annotation (default: None).
+            - annType: Optional. Type of all the annotations of the substances for this source (default: None). It should be one of the following: 'Confirmed', 'Suspected', 'Negative'.
+            - annTypeField: Optional. Name of the header of the column containing all the annotations of the substances for this source (default: None). It should be one of the following: 'Confirmed', 'Suspected', 'Negative'.
+            - annTypeIndex: Optional. Index of the column containing all the annotations of the substances for this source (default: None). It should be one of the following: 'Confirmed', 'Suspected', 'Negative'.
+            - linkIndex: Optional. Index of the column containing a link to the substance information page (default: None). 
+            - linkField: Optional. Name of the header of the column containing a link to the substance information page (default: None).
+            - synonymsIndices: Optional. List of indices of the column(s) containing synonyms of the substance (default: None). Synonym type will be 'Name'.
+            - synonymsFields: Optional. List of name(s) of the header of the column(s) containing synonyms of the substance (default: None). 
+            - updatesmi: Even if the substance is already in the DB, force lookup of its structure.
+    """
+
+    curs = conn.cursor()
+
+    if extIDfield is None:
+        extIDfield = CASfield
+
+    molcount = 0
+    for i, rows in dataframe.iterrows():
+        molcount += 1
+        try:
+            CAS = processCASfromPandas(rows[CASfield])
+        except:
+            CAS = None
+        else:
+            if CAS == '-':
+                CAS = None
+
+        if extIDfield is None:
+            # No field with the ID of the substance in the source of origin 
+            # has been provided so one will be generated.
+            extID = CAS
+        else:
+            try:
+                extID = rows[extIDfield]
+            except:
+                extID = CAS
+
+        if extIDfield is None:
+            # No field with the ID of the substance in the source of origin 
+            # has been provided so one will be generated.
+            extID = 'mol%0.8d'%molcount
+
+        if not linkField: 
+            link = None
+        else: 
+            link = dataframe[linkField]
+        
+        # Get smiles from CAS
+        if isinstance(CAS, list):
+            subid_list = []
+            for casrn,extid in zip(CAS,extID):
+                subsID = getSMILESfromCAS(rows, casrn, updatesmi, extid, sourceID, conn, 
+                                        curs, link, smilesField)
+                subid_list.append((extid,subsID))
+        elif isinstance(CAS, str):
+            subsID = getSMILESfromCAS(rows, CAS, updatesmi, extID, sourceID, conn, curs, 
+                                    link, smilesField)
+
+        # Add synonyms and annotations
+        
+        if isinstance(extID, list):
+            for extid, subsid in subid_list:
+                addSynonymsFromCASpandasDf(rows, synonymsFields, extid, subsid, conn)
+                addAnnotationsFromPandasDf(rows, annField, subsid, annType, conn)
+        elif isinstance(extID, str):
+            addSynonymsFromCASpandasDf(rows, synonymsFields, extID, subsID, conn)
+            addAnnotationsFromPandasDf(rows, annField, subsID, annType, conn)
 
 def addSubstanceFromCASFile(conn, sourceID, fname, 
                         extIDindex= None, extIDfield= None, 
