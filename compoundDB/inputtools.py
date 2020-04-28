@@ -713,7 +713,9 @@ def addAnnotationsFromPandasDf(row_df: pd.Series, annotation_field: str, subsid:
         else:
             ann_type = annotation_type
         
-        addAnnotation(conn, subsid, annotation, ann_type)
+        ann_list = annotation.split(',')
+        for ann in ann_list:
+            addAnnotation(conn, subsid, ann, ann_type)
 
 def addSubstanceFromPandasDf(conn, sourceID, dataframe, 
                         extIDindex= None, extIDfield= None, 
